@@ -1,4 +1,4 @@
-package internal
+package leveldb
 
 import (
 	"bytes"
@@ -6,11 +6,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"unicode"
 	"unicode/utf8"
 
 	"github.com/fatih/color"
 )
+
+func init() {
+	if _, ok := os.LookupEnv("NO_COLOR"); ok {
+		color.NoColor = true
+	}
+}
 
 type base64Writer struct {
 	w io.Writer
@@ -23,10 +30,10 @@ func NewBase64Writer(w io.Writer) *base64Writer {
 func (w *base64Writer) Write(b []byte) (int, error) {
 	enc := base64.NewEncoder(base64.StdEncoding, w.w)
 	if _, err := enc.Write(b); err != nil {
-		return 0, nil
+		return 0, err
 	}
 	if err := enc.Close(); err != nil {
-		return 0, nil
+		return 0, err
 	}
 	return base64.StdEncoding.EncodedLen(len(b)), nil
 }
@@ -35,33 +42,33 @@ func (w *base64Writer) Unwrap() io.Writer {
 	return w.w
 }
 
-type quotingWriter struct {
-	w           io.Writer
-	doubleQuote bool
-	parseJSON   bool
-	wide        bool
+type prettyPrinter struct {
+	w         io.Writer
+	quoting   bool
+	truncate  bool
+	parseJSON bool
 }
 
-func NewQuotingWriter(w io.Writer) *quotingWriter {
-	return &quotingWriter{w: w}
+func NewPrettyPrinter(w io.Writer) *prettyPrinter {
+	return &prettyPrinter{w: w}
 }
 
-func (w *quotingWriter) SetDoubleQuote(b bool) *quotingWriter {
-	w.doubleQuote = b
+func (w *prettyPrinter) SetQuoting(b bool) *prettyPrinter {
+	w.quoting = b
 	return w
 }
 
-func (w *quotingWriter) SetParseJSON(b bool) *quotingWriter {
+func (w *prettyPrinter) SetTruncate(b bool) *prettyPrinter {
+	w.truncate = b
+	return w
+}
+
+func (w *prettyPrinter) SetParseJSON(b bool) *prettyPrinter {
 	w.parseJSON = b
 	return w
 }
 
-func (w *quotingWriter) SetWide(b bool) *quotingWriter {
-	w.wide = b
-	return w
-}
-
-func (w *quotingWriter) Write(b []byte) (int, error) {
+func (w *prettyPrinter) Write(b []byte) (int, error) {
 	red := color.New(color.FgRed).FprintfFunc()
 
 	if w.parseJSON {
@@ -90,11 +97,12 @@ func (w *quotingWriter) Write(b []byte) (int, error) {
 
 	buf := new(bytes.Buffer)
 	buf.Grow(len(b))
-	if w.doubleQuote {
+	if w.quoting {
 		buf.WriteByte('"')
 	}
+	nwritten := 0
 	for len(b) > 0 {
-		if !w.wide && buf.Len() > 100 {
+		if w.truncate && nwritten > 100 {
 			red(buf, "...")
 			break
 		}
@@ -102,49 +110,65 @@ func (w *quotingWriter) Write(b []byte) (int, error) {
 		switch {
 		case r == utf8.RuneError:
 			red(buf, "\\x%02x", b[0])
+			nwritten += 4
 		case r == 0:
 			red(buf, "\\0")
+			nwritten += 2
 		case r == '"':
-			if w.doubleQuote {
+			if w.quoting {
 				red(buf, "\\\"")
+				nwritten += 2
 			} else {
 				buf.WriteByte(byte(r))
+				nwritten += 1
 			}
 		case r == '\\':
 			red(buf, "\\\\")
+			nwritten += 2
 		case r == '\a':
 			red(buf, "\\a")
+			nwritten += 2
 		case r == '\b':
 			red(buf, "\\b")
+			nwritten += 2
 		case r == '\f':
 			red(buf, "\\f")
+			nwritten += 2
 		case r == '\n':
 			red(buf, "\\n")
+			nwritten += 2
 		case r == '\r':
 			red(buf, "\\r")
+			nwritten += 2
 		case r == '\t':
 			red(buf, "\\t")
+			nwritten += 2
 		case r == '\v':
 			red(buf, "\\v")
+			nwritten += 2
 		case unicode.IsPrint(r):
 			buf.WriteRune(r)
+			nwritten += 1
 		case r < utf8.RuneSelf:
 			red(buf, "\\x%02x", r)
+			nwritten += 4
 		case r <= 0xffff:
 			red(buf, "\\u%04x", r)
+			nwritten += 6
 		default:
 			red(buf, "\\U%08x", r)
+			nwritten += 8
 		}
 		b = b[size:]
 	}
-	if w.doubleQuote {
+	if w.quoting {
 		buf.WriteByte('"')
 	}
 	n, err := buf.WriteTo(w.w)
 	return int(n), err
 }
 
-func (w *quotingWriter) Unwrap() io.Writer {
+func (w *prettyPrinter) Unwrap() io.Writer {
 	return w.w
 }
 
@@ -178,7 +202,7 @@ func parseHex(b []byte, n int) (uint, bool) {
 	return x, true
 }
 
-func Unquote(b []byte) ([]byte, error) {
+func Unescape(b []byte) ([]byte, error) {
 	s, d := 0, 0
 	for s < len(b) {
 		if b[s] != '\\' {

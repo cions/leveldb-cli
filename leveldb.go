@@ -5,7 +5,6 @@ import (
 	"io"
 	"os"
 	"path"
-	"strings"
 
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/opt"
@@ -60,7 +59,7 @@ func InitDB(dbpath string) error {
 	return db.Close()
 }
 
-func Get(dbpath string, key []byte) error {
+func Get(dbpath string, key []byte, w io.Writer) error {
 	opts := &opt.Options{ErrorIfMissing: true, ReadOnly: true}
 	db, err := leveldb.OpenFile(dbpath, opts)
 	if err != nil {
@@ -72,7 +71,7 @@ func Get(dbpath string, key []byte) error {
 	if err != nil {
 		return err
 	}
-	_, err = os.Stdout.Write(value)
+	_, err = w.Write(value)
 	return err
 }
 
@@ -199,35 +198,47 @@ func Load(dbpath string, r io.Reader) error {
 	return db.Write(batch, nil)
 }
 
-func isLevelDBFilename(file string) bool {
-	for _, x := range []string{"LOCK", "LOG", "LOG.old", "CURRENT", "CURRENT.bak"} {
-		if file == x {
-			return true
+func matchPattern(pattern, filename string) bool {
+	i, j := 0, 0
+	for i < len(pattern) && j < len(filename) {
+		if pattern[i] == '*' {
+			if !('0' <= filename[j] && filename[j] <= '9') {
+				return false
+			}
+			j += 1
+			for j < len(filename) && '0' <= filename[j] && filename[j] <= '9' {
+				j += 1
+			}
+			i += 1
+		} else if pattern[i] != filename[j] {
+			return false
+		} else {
+			i += 1
+			j += 1
 		}
 	}
-	if strings.HasPrefix(file, "CURRENT.") {
-		file = strings.TrimPrefix(file, "CURRENT.")
-		if strings.TrimLeft(file, "0123456789") == "" {
-			return true
-		}
-		return false
+	return i == len(pattern) && j == len(filename)
+}
+
+func isLevelDBFilename(filename string) bool {
+	patterns := []string{
+		"LOCK",
+		"LOG",
+		"LOG.old",
+		"CURRENT",
+		"CURRENT.bak",
+		"CURRENT.*",
+		"MANIFEST-*",
+		"*.ldb",
+		"*.log",
+		"*.sst",
+		"*.tmp",
 	}
-	if strings.HasPrefix(file, "MANIFEST-") {
-		file = strings.TrimPrefix(file, "MANIFEST-")
-		if strings.TrimLeft(file, "0123456789") == "" {
+
+	for _, pattern := range patterns {
+		if matchPattern(pattern, filename) {
 			return true
 		}
-		return false
-	}
-	for _, ext := range []string{".log", ".ldb", ".sst", ".tmp"} {
-		if !strings.HasSuffix(file, ext) {
-			continue
-		}
-		file = strings.TrimSuffix(file, ext)
-		if strings.TrimLeft(file, "0123456789") == "" {
-			return true
-		}
-		return false
 	}
 	return false
 }

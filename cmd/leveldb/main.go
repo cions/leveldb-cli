@@ -6,20 +6,22 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
+	"strings"
 
 	"github.com/cions/leveldb-cli"
-	"github.com/cions/leveldb-cli/internal"
 	"github.com/fatih/color"
 	"github.com/urfave/cli/v2"
 )
+
+var version = "v0.1.1"
 
 func main() {
 	var lockFile string
 
 	app := &cli.App{
-		Name:    "ldb",
+		Name:    "leveldb",
 		Usage:   "A command-line interface for LevelDB",
-		Version: "0.1.0",
+		Version: strings.TrimPrefix(version, "v"),
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "dbpath",
@@ -76,14 +78,14 @@ func main() {
 					var err error
 					key := []byte(c.Args().Get(0))
 					if c.Bool("base64") {
-						key, err = internal.DecodeBase64(key)
+						key, err = leveldb.DecodeBase64(key)
 					} else if !c.Bool("raw") {
-						key, err = internal.Unquote(key)
+						key, err = leveldb.Unescape(key)
 					}
 					if err != nil {
 						return err
 					}
-					return leveldb.Get(c.String("dbpath"), key)
+					return leveldb.Get(c.String("dbpath"), key, os.Stdout)
 				},
 			},
 			{
@@ -113,9 +115,9 @@ func main() {
 
 					key := []byte(c.Args().Get(0))
 					if c.Bool("base64") {
-						key, err = internal.DecodeBase64(key)
+						key, err = leveldb.DecodeBase64(key)
 					} else if !c.Bool("raw") {
-						key, err = internal.Unquote(key)
+						key, err = leveldb.Unescape(key)
 					}
 					if err != nil {
 						return err
@@ -127,9 +129,9 @@ func main() {
 					} else {
 						value = []byte(c.Args().Get(1))
 						if c.Bool("base64") {
-							value, err = internal.DecodeBase64(value)
+							value, err = leveldb.DecodeBase64(value)
 						} else if !c.Bool("raw") {
-							value, err = internal.Unquote(value)
+							value, err = leveldb.Unescape(value)
 						}
 					}
 					if err != nil {
@@ -163,9 +165,9 @@ func main() {
 					var err error
 					key := []byte(c.Args().Get(0))
 					if c.Bool("base64") {
-						key, err = internal.DecodeBase64(key)
+						key, err = leveldb.DecodeBase64(key)
 					} else if !c.Bool("raw") {
-						key, err = internal.Unquote(key)
+						key, err = leveldb.Unescape(key)
 					}
 					if err != nil {
 						return err
@@ -193,9 +195,9 @@ func main() {
 				Action: func(c *cli.Context) error {
 					var w io.Writer = os.Stdout
 					if c.Bool("base64") {
-						w = internal.NewBase64Writer(os.Stdout)
+						w = leveldb.NewBase64Writer(os.Stdout)
 					} else if !c.Bool("raw") {
-						w = internal.NewQuotingWriter(color.Output).SetWide(true)
+						w = leveldb.NewPrettyPrinter(color.Output)
 					}
 					return leveldb.Keys(c.String("dbpath"), w)
 				},
@@ -204,7 +206,7 @@ func main() {
 				Name:      "show",
 				Aliases:   []string{"s"},
 				Usage:     "show all entries",
-				ArgsUsage: "",
+				ArgsUsage: " ",
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
 						Name:    "raw",
@@ -231,16 +233,14 @@ func main() {
 				Action: func(c *cli.Context) error {
 					var kw, vw io.Writer = os.Stdout, os.Stdout
 					if c.Bool("base64") {
-						kw = internal.NewBase64Writer(os.Stdout)
-						vw = internal.NewBase64Writer(os.Stdout)
+						kw = leveldb.NewBase64Writer(os.Stdout)
+						vw = leveldb.NewBase64Writer(os.Stdout)
 					} else if !c.Bool("raw") {
-						kw = internal.NewQuotingWriter(color.Output).
-							SetDoubleQuote(true).
-							SetWide(true)
-						vw = internal.NewQuotingWriter(color.Output).
-							SetDoubleQuote(true).
-							SetParseJSON(!c.Bool("no-json")).
-							SetWide(c.Bool("wide"))
+						kw = leveldb.NewPrettyPrinter(color.Output).SetQuoting(true)
+						vw = leveldb.NewPrettyPrinter(color.Output).
+							SetQuoting(true).
+							SetTruncate(!c.Bool("wide")).
+							SetParseJSON(!c.Bool("no-json"))
 					}
 					return leveldb.Show(c.String("dbpath"), kw, vw)
 				},
@@ -285,7 +285,7 @@ func main() {
 		if lockFile != "" {
 			os.Remove(lockFile)
 		}
-		fmt.Fprintf(os.Stderr, "ldb: %v\n", err)
+		fmt.Fprintf(os.Stderr, "leveldb: %v\n", err)
 		os.Exit(1)
 	}
 }
