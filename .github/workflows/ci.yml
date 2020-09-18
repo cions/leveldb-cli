@@ -20,6 +20,7 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v2
     - name: Test
+      shell: bash
       env:
         CGO_ENABLED: '0'
       run: go test -test.v -cover -mod=readonly
