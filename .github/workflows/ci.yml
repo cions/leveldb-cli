@@ -70,7 +70,7 @@ jobs:
         ARTIFACT_DIR="leveldb-${GOOS}-${GOARCH}-${GITHUB_REF#refs/tags/v}"
         mkdir "${ARTIFACT_DIR}"
         cp LICENSE README.md "${ARTIFACT_DIR}"
-        go build -v -mod=readonly -trimpath -ldflags "-s -w -X main.version=\"${GITHUB_REF#refs/tags/}\"" -o "${ARTIFACT_DIR}" ./cmd/...
+        go build -v -mod=readonly -trimpath -ldflags "-s -w -X \"main.version=${GITHUB_REF#refs/tags/}\"" -o "${ARTIFACT_DIR}" ./cmd/...
         case "${GOOS}" in
           windows)
             zip "${ARTIFACT_DIR}.zip" "${ARTIFACT_DIR}"/*

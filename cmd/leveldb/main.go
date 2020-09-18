@@ -13,7 +13,7 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-var version = "v0.1.1"
+var version = "v0.1.2"
 
 func main() {
 	var lockFile string
