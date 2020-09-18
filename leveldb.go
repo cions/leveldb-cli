@@ -292,5 +292,6 @@ func Compact(dbpath string) error {
 		return err
 	}
 
+	bak.Close()
 	return os.Remove(bakfile)
 }
