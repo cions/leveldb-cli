@@ -114,14 +114,9 @@ func (w *prettyPrinter) Write(b []byte) (int, error) {
 		case r == 0:
 			red(buf, "\\0")
 			nwritten += 2
-		case r == '"':
-			if w.quoting {
-				red(buf, "\\\"")
-				nwritten += 2
-			} else {
-				buf.WriteByte(byte(r))
-				nwritten += 1
-			}
+		case r == '"' && w.quoting:
+			red(buf, "\\\"")
+			nwritten += 2
 		case r == '\\':
 			red(buf, "\\\\")
 			nwritten += 2

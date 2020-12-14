@@ -8,7 +8,7 @@ import (
 
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/opt"
-	"github.com/vmihailenco/msgpack/v4"
+	"github.com/vmihailenco/msgpack/v5"
 )
 
 type Entry struct {
@@ -147,7 +147,7 @@ func Dump(dbpath string, w io.Writer) error {
 		return err
 	}
 
-	enc := msgpack.NewEncoder(w).UseCompactEncoding(true)
+	enc := msgpack.NewEncoder(w)
 	if err := enc.EncodeMapLen(len(data)); err != nil {
 		return err
 	}

@@ -13,7 +13,7 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-var version = "v0.1.2"
+var version = "v0.1.3"
 
 func main() {
 	var lockFile string
@@ -280,12 +280,11 @@ func main() {
 		},
 	}
 
-	err := app.Run(os.Args)
-	if err != nil {
+	if err := app.Run(os.Args); err != nil {
 		if lockFile != "" {
 			os.Remove(lockFile)
 		}
-		fmt.Fprintf(os.Stderr, "leveldb: %v\n", err)
+		fmt.Fprintf(os.Stderr, "leveldb: error: %v\n", err)
 		os.Exit(1)
 	}
 }
