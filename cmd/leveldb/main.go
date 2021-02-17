@@ -3,9 +3,9 @@ package main
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path"
+	"runtime/debug"
 	"strings"
 
 	"github.com/cions/leveldb-cli"
@@ -13,15 +13,18 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-var version = "v0.1.3"
-
 func main() {
 	var lockFile string
+
+	var version string = "(devel)"
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		version = strings.TrimPrefix(bi.Main.Version, "v")
+	}
 
 	app := &cli.App{
 		Name:    "leveldb",
 		Usage:   "A command-line interface for LevelDB",
-		Version: strings.TrimPrefix(version, "v"),
+		Version: version,
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "dbpath",
@@ -125,7 +128,7 @@ func main() {
 
 					var value []byte
 					if c.NArg() == 1 {
-						value, err = ioutil.ReadAll(os.Stdin)
+						value, err = io.ReadAll(os.Stdin)
 					} else {
 						value = []byte(c.Args().Get(1))
 						if c.Bool("base64") {
