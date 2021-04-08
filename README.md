@@ -3,6 +3,7 @@
 [![GitHub Releases](https://img.shields.io/github/v/release/cions/leveldb-cli?sort=semver)](https://github.com/cions/leveldb-cli/releases)
 [![LICENSE](https://img.shields.io/github/license/cions/leveldb-cli)](https://github.com/cions/leveldb-cli/blob/master/LICENSE)
 [![CI](https://github.com/cions/leveldb-cli/workflows/CI/badge.svg)](https://github.com/cions/leveldb-cli/actions)
+[![Go Reference](https://pkg.go.dev/badge/github.com/cions/leveldb-cli.svg)](https://pkg.go.dev/github.com/cions/leveldb-cli)
 [![Go Report Card](https://goreportcard.com/badge/github.com/cions/leveldb-cli)](https://goreportcard.com/report/github.com/cions/leveldb-cli)
 
 A command-line interface for [LevelDB](https://github.com/google/leveldb)
