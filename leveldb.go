@@ -5,11 +5,14 @@ import (
 	"io"
 	"os"
 	"path"
+	"regexp"
 
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/opt"
 	"github.com/vmihailenco/msgpack/v5"
 )
+
+var leveldbFilenamePattern = regexp.MustCompile(`^(?:LOCK|LOG(?:\.old)?|CURRENT(?:\.bak|\.\d+)?|MANIFEST-\d+|\d+\.(?:ldb|log|sst|tmp))$`)
 
 type Entry struct {
 	Key, Value []byte
@@ -198,51 +201,6 @@ func Load(dbpath string, r io.Reader) error {
 	return db.Write(batch, nil)
 }
 
-func matchPattern(pattern, filename string) bool {
-	i, j := 0, 0
-	for i < len(pattern) && j < len(filename) {
-		if pattern[i] == '*' {
-			if !('0' <= filename[j] && filename[j] <= '9') {
-				return false
-			}
-			j += 1
-			for j < len(filename) && '0' <= filename[j] && filename[j] <= '9' {
-				j += 1
-			}
-			i += 1
-		} else if pattern[i] != filename[j] {
-			return false
-		} else {
-			i += 1
-			j += 1
-		}
-	}
-	return i == len(pattern) && j == len(filename)
-}
-
-func isLevelDBFilename(filename string) bool {
-	patterns := []string{
-		"LOCK",
-		"LOG",
-		"LOG.old",
-		"CURRENT",
-		"CURRENT.bak",
-		"CURRENT.*",
-		"MANIFEST-*",
-		"*.ldb",
-		"*.log",
-		"*.sst",
-		"*.tmp",
-	}
-
-	for _, pattern := range patterns {
-		if matchPattern(pattern, filename) {
-			return true
-		}
-	}
-	return false
-}
-
 func DestroyDB(dbpath string) error {
 	dir, err := os.Open(dbpath)
 	if err != nil {
@@ -255,11 +213,12 @@ func DestroyDB(dbpath string) error {
 		return err
 	}
 
-	for _, name := range names {
-		if !isLevelDBFilename(name) {
+	for _, filename := range names {
+		if !leveldbFilenamePattern.MatchString(filename) {
 			continue
 		}
-		if err := os.Remove(path.Join(dbpath, name)); err != nil {
+		target := path.Join(dbpath, filename)
+		if err := os.Remove(target); err != nil {
 			return err
 		}
 	}

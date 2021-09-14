@@ -250,32 +250,7 @@ func TestCompact(t *testing.T) {
 	}
 }
 
-func TestMatchPattern(t *testing.T) {
-	cases := []struct {
-		pattern, filename string
-		result            bool
-	}{
-		{"LOCK", "LOCK", true},
-		{"LOCK", "LOCK.bak", false},
-		{"*.log", "42.log", true},
-		{"*.log", "-42.log", false},
-		{"*.log", "42.log.gz", false},
-		{"CURRENT-*", "CURRENT", false},
-		{"CURRENT-*", "CURRENT-", false},
-		{"CURRENT-*", "CURRENT-20", true},
-		{"CURRENT-*", "CURRENT--20", false},
-		{"CURRENT-*", "CURRENT-20a", false},
-	}
-
-	for _, tc := range cases {
-		result := matchPattern(tc.pattern, tc.filename)
-		if result != tc.result {
-			t.Errorf("matchPattern(%q, %q) = %v, want %v", tc.pattern, tc.filename, result, tc.result)
-		}
-	}
-}
-
-func TestIsLevelDBFilename(t *testing.T) {
+func TestLevelDBFilenamePattern(t *testing.T) {
 	matches := []string{
 		"LOCK",
 		"LOG",
@@ -284,20 +259,21 @@ func TestIsLevelDBFilename(t *testing.T) {
 		"CURRENT.bak",
 		"CURRENT.000042",
 		"MANIFEST-000042",
-		"000042.log",
 		"000042.ldb",
+		"000042.log",
 		"000042.sst",
 		"000042.tmp",
 	}
 
 	for _, filename := range matches {
-		if !isLevelDBFilename(filename) {
+		if !leveldbFilenamePattern.MatchString(filename) {
 			t.Errorf("%q should match", filename)
 		}
 	}
 
 	dontMatches := []string{
 		"LOCK2",
+		"LOG old",
 		"LOG.bak",
 		"CURRENT.",
 		"CURRENT.orig",
@@ -306,17 +282,18 @@ func TestIsLevelDBFilename(t *testing.T) {
 		"MANIFEST-",
 		"MANIFEST--000042",
 		"MANIFEST-000042a",
-		".log",
 		".ldb",
+		".log",
 		".sst",
 		".tmp",
-		"-000042.ldb",
-		"000042a.tmp",
-		"000042.log.gz",
+		"42ldb",
+		"-000042.log",
+		"000042a.sst",
+		"000042.tmp.gz",
 	}
 
 	for _, filename := range dontMatches {
-		if isLevelDBFilename(filename) {
+		if leveldbFilenamePattern.MatchString(filename) {
 			t.Errorf("%q should not match", filename)
 		}
 	}
