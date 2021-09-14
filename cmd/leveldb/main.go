@@ -276,8 +276,15 @@ func main() {
 				Name:      "destroy",
 				Usage:     "destroy the database",
 				ArgsUsage: " ",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name:    "dry-run",
+						Aliases: []string{"n"},
+						Usage:   "do not actually remove anything, just show what would be done",
+					},
+				},
 				Action: func(c *cli.Context) error {
-					return leveldb.DestroyDB(c.String("dbpath"))
+					return leveldb.DestroyDB(c.String("dbpath"), c.Bool("dry-run"))
 				},
 			},
 		},

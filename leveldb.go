@@ -201,7 +201,7 @@ func Load(dbpath string, r io.Reader) error {
 	return db.Write(batch, nil)
 }
 
-func DestroyDB(dbpath string) error {
+func DestroyDB(dbpath string, dryRun bool) error {
 	dir, err := os.Open(dbpath)
 	if err != nil {
 		return err
@@ -218,6 +218,10 @@ func DestroyDB(dbpath string) error {
 			continue
 		}
 		target := path.Join(dbpath, filename)
+		if dryRun {
+			fmt.Printf("Would remove %s\n", target)
+			continue
+		}
 		if err := os.Remove(target); err != nil {
 			return err
 		}
@@ -243,7 +247,7 @@ func Compact(dbpath string) error {
 		return err
 	}
 
-	if err := DestroyDB(dbpath); err != nil {
+	if err := DestroyDB(dbpath, false); err != nil {
 		return err
 	}
 

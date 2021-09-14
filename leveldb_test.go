@@ -211,7 +211,7 @@ func TestDestroyDB(t *testing.T) {
 	}
 	f.Close()
 
-	if err := DestroyDB(tmpdir); err != nil {
+	if err := DestroyDB(tmpdir, false); err != nil {
 		t.Errorf("DestroyDB(): unexpected error: %v", err)
 	}
 
