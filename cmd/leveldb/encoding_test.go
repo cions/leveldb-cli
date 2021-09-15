@@ -1,4 +1,4 @@
-package leveldb
+package main
 
 import (
 	"bytes"
@@ -17,7 +17,7 @@ func TestBase64Writer(t *testing.T) {
 	}
 
 	buf := new(bytes.Buffer)
-	w := NewBase64Writer(buf)
+	w := newBase64Writer(buf)
 	for _, tc := range cases {
 		buf.Reset()
 		n, err := w.Write(tc.input)
@@ -48,13 +48,13 @@ func TestPrettyPrinter(t *testing.T) {
 		{[]byte(`"string"`), []byte(`string`), false, false, true},
 		{[]byte(`{"key":"value"}`), []byte("{\n  \"key\": \"value\"\n}"), false, false, true},
 		{[]byte(`"{\"key\":\"value\"}"`), []byte("{\n  \"key\": \"value\"\n}"), false, false, true},
-		{bytes.Repeat([]byte("a\x80"), 50), bytes.Repeat([]byte(`a\x80`), 50), false, false, false},
-		{bytes.Repeat([]byte("a\x80"), 50), append(bytes.Repeat([]byte(`a\x80`), 20), 'a', '.', '.', '.'), false, true, false},
+		{bytes.Repeat([]byte("a\x80"), 100), bytes.Repeat([]byte(`a\x80`), 100), false, false, false},
+		{bytes.Repeat([]byte("a\x80"), 100), append(bytes.Repeat([]byte(`a\x80`), 50), '.', '.', '.'), false, true, false},
 	}
 
 	color.NoColor = true
 	buf := new(bytes.Buffer)
-	w := NewPrettyPrinter(buf)
+	w := newPrettyPrinter(buf)
 	for _, tc := range cases {
 		buf.Reset()
 		w.SetQuoting(tc.quoting)
@@ -77,6 +77,8 @@ func TestDecodeBase64(t *testing.T) {
 	}{
 		{[]byte(""), []byte("")},
 		{[]byte("Y"), nil},
+		{[]byte("YW"), []byte("a")},
+		{[]byte("YWJ"), []byte("ab")},
 		{[]byte("YWJj"), []byte("abc")},
 		{[]byte("YWJjZA"), []byte("abcd")},
 		{[]byte("YWJjZA=="), []byte("abcd")},
@@ -84,13 +86,13 @@ func TestDecodeBase64(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		got, err := DecodeBase64(tc.input)
+		got, err := decodeBase64(tc.input)
 		if tc.want == nil && err == nil {
-			t.Errorf("DecodeBase64(%q) should fail", tc.input)
+			t.Errorf("decodeBase64(%q) should fail", tc.input)
 		} else if tc.want != nil && err != nil {
-			t.Errorf("DecodeBase64(%q): unexpected error: %v", tc.input, err)
+			t.Errorf("decodeBase64(%q): unexpected error: %v", tc.input, err)
 		} else if tc.want != nil && !bytes.Equal(got, tc.want) {
-			t.Errorf("DecodeBase64(%q) = %q, want %q", tc.input, got, tc.want)
+			t.Errorf("decodeBase64(%q) = %q, want %q", tc.input, got, tc.want)
 		}
 	}
 }
@@ -111,13 +113,13 @@ func TestUnescape(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		got, err := Unescape(tc.input)
+		got, err := unescape(tc.input)
 		if tc.want == nil && err == nil {
-			t.Errorf("Unescape(%q) should fail", tc.input)
+			t.Errorf("unescape(%q) should fail", tc.input)
 		} else if tc.want != nil && err != nil {
-			t.Errorf("Unescape(%q): unexpected error: %v", tc.input, err)
+			t.Errorf("unescape(%q): unexpected error: %v", tc.input, err)
 		} else if tc.want != nil && !bytes.Equal(got, tc.want) {
-			t.Errorf("Unescape(%q) = %q, want %q", tc.input, got, tc.want)
+			t.Errorf("unescape(%q) = %q, want %q", tc.input, got, tc.want)
 		}
 	}
 }

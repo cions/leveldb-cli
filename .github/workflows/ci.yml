@@ -23,7 +23,7 @@ jobs:
       shell: bash
       env:
         CGO_ENABLED: '0'
-      run: go test -v
+      run: go test -v ./...
 
   create-release:
     runs-on: ubuntu-latest
@@ -60,8 +60,6 @@ jobs:
         CGO_ENABLED: '0'
         GOOS: ${{ matrix.GOOS }}
         GOARCH: ${{ matrix.GOARCH }}
-        GOHOSTOS: linux
-        GOHOSTARCH: amd64
       run: |
         go install -trimpath -ldflags "-s -w" "github.com/${GITHUB_REPOSITORY}/cmd/leveldb@${GITHUB_REF#refs/tags/}"
 
@@ -69,7 +67,7 @@ jobs:
         mkdir "${ARTIFACT_DIR}"
         cp LICENSE README.md "${ARTIFACT_DIR}"
 
-        if [[ "${GOOS}/${GOARCH}" == "${GOHOSTOS}/${GOHOSTARCH}" ]]; then
+        if [[ "${GOOS}/${GOARCH}" == "$(go env GOHOSTOS)/$(go env GOHOSTARCH)" ]]; then
           GOBIN="$(go env GOPATH)/bin"
         else
           GOBIN="$(go env GOPATH)/bin/${GOOS}_${GOARCH}"

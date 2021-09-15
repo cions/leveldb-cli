@@ -1,4 +1,4 @@
-package leveldb
+package main
 
 import (
 	"bytes"
@@ -23,7 +23,7 @@ type base64Writer struct {
 	w io.Writer
 }
 
-func NewBase64Writer(w io.Writer) *base64Writer {
+func newBase64Writer(w io.Writer) *base64Writer {
 	return &base64Writer{w: w}
 }
 
@@ -38,10 +38,6 @@ func (w *base64Writer) Write(b []byte) (int, error) {
 	return base64.StdEncoding.EncodedLen(len(b)), nil
 }
 
-func (w *base64Writer) Unwrap() io.Writer {
-	return w.w
-}
-
 type prettyPrinter struct {
 	w         io.Writer
 	quoting   bool
@@ -49,7 +45,7 @@ type prettyPrinter struct {
 	parseJSON bool
 }
 
-func NewPrettyPrinter(w io.Writer) *prettyPrinter {
+func newPrettyPrinter(w io.Writer) *prettyPrinter {
 	return &prettyPrinter{w: w}
 }
 
@@ -96,16 +92,14 @@ func (w *prettyPrinter) Write(b []byte) (int, error) {
 	}
 
 	buf := new(bytes.Buffer)
-	buf.Grow(len(b))
+	if !w.truncate {
+		buf.Grow(len(b))
+	}
 	if w.quoting {
 		buf.WriteByte('"')
 	}
 	nwritten := 0
 	for len(b) > 0 {
-		if w.truncate && nwritten > 100 {
-			red(buf, "...")
-			break
-		}
 		r, size := utf8.DecodeRune(b)
 		switch {
 		case r == utf8.RuneError:
@@ -144,7 +138,7 @@ func (w *prettyPrinter) Write(b []byte) (int, error) {
 		case unicode.IsPrint(r):
 			buf.WriteRune(r)
 			nwritten += 1
-		case r < utf8.RuneSelf:
+		case r <= 0x7f:
 			red(buf, "\\x%02x", r)
 			nwritten += 4
 		case r <= 0xffff:
@@ -155,6 +149,10 @@ func (w *prettyPrinter) Write(b []byte) (int, error) {
 			nwritten += 8
 		}
 		b = b[size:]
+		if w.truncate && nwritten >= 250 {
+			red(buf, "...")
+			break
+		}
 	}
 	if w.quoting {
 		buf.WriteByte('"')
@@ -163,11 +161,7 @@ func (w *prettyPrinter) Write(b []byte) (int, error) {
 	return int(n), err
 }
 
-func (w *prettyPrinter) Unwrap() io.Writer {
-	return w.w
-}
-
-func DecodeBase64(b []byte) ([]byte, error) {
+func decodeBase64(b []byte) ([]byte, error) {
 	b = bytes.TrimRight(b, "=")
 	n, err := base64.RawStdEncoding.Decode(b, b)
 	if err != nil {
@@ -197,7 +191,7 @@ func parseHex(b []byte, n int) (uint, bool) {
 	return x, true
 }
 
-func Unescape(b []byte) ([]byte, error) {
+func unescape(b []byte) ([]byte, error) {
 	s, d := 0, 0
 	for s < len(b) {
 		if b[s] != '\\' {
