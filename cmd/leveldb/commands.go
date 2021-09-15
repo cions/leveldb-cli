@@ -1,14 +1,17 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path"
 	"regexp"
 
+	"github.com/cions/leveldb-cli/indexeddb"
 	"github.com/fatih/color"
 	"github.com/syndtr/goleveldb/leveldb"
+	"github.com/syndtr/goleveldb/leveldb/comparer"
 	"github.com/syndtr/goleveldb/leveldb/opt"
 	"github.com/urfave/cli/v2"
 	"github.com/vmihailenco/msgpack/v5"
@@ -20,8 +23,8 @@ type entry struct {
 	Key, Value []byte
 }
 
-func getAllEntries(dbpath string) ([]entry, error) {
-	opts := &opt.Options{ErrorIfMissing: true, ReadOnly: true}
+func getAllEntries(dbpath string, cmp comparer.Comparer) ([]entry, error) {
+	opts := &opt.Options{Comparer: cmp, ErrorIfMissing: true, ReadOnly: true}
 	db, err := leveldb.OpenFile(dbpath, opts)
 	if err != nil {
 		return nil, err
@@ -52,7 +55,11 @@ func getAllEntries(dbpath string) ([]entry, error) {
 }
 
 func initCmd(c *cli.Context) error {
-	opts := &opt.Options{ErrorIfExist: true}
+	var cmp comparer.Comparer = comparer.DefaultComparer
+	if c.Bool("indexeddb") {
+		cmp = indexeddb.IndexedDBComparer
+	}
+	opts := &opt.Options{Comparer: cmp, ErrorIfExist: true}
 	db, err := leveldb.OpenFile(c.String("dbpath"), opts)
 	if err != nil {
 		return err
@@ -76,7 +83,11 @@ func getCmd(c *cli.Context) error {
 		return err
 	}
 
-	opts := &opt.Options{ErrorIfMissing: true, ReadOnly: true}
+	var cmp comparer.Comparer = comparer.DefaultComparer
+	if c.Bool("indexeddb") {
+		cmp = indexeddb.IndexedDBComparer
+	}
+	opts := &opt.Options{Comparer: cmp, ErrorIfMissing: true, ReadOnly: true}
 	db, err := leveldb.OpenFile(c.String("dbpath"), opts)
 	if err != nil {
 		return err
@@ -94,6 +105,9 @@ func getCmd(c *cli.Context) error {
 func putCmd(c *cli.Context) error {
 	if c.NArg() < 1 {
 		cli.ShowCommandHelpAndExit(c, "put", 2)
+	}
+	if c.Bool("indexeddb") {
+		return errors.New("modifying IndexedDB database is not supported")
 	}
 
 	var err error
@@ -137,6 +151,9 @@ func deleteCmd(c *cli.Context) error {
 	if c.NArg() < 1 {
 		cli.ShowCommandHelpAndExit(c, "delete", 2)
 	}
+	if c.Bool("indexeddb") {
+		return errors.New("modifying IndexedDB database is not supported")
+	}
 
 	var err error
 	key := []byte(c.Args().Get(0))
@@ -167,7 +184,11 @@ func keysCmd(c *cli.Context) error {
 		w = newPrettyPrinter(color.Output)
 	}
 
-	entries, err := getAllEntries(c.String("dbpath"))
+	var cmp comparer.Comparer = comparer.DefaultComparer
+	if c.Bool("indexeddb") {
+		cmp = indexeddb.IndexedDBComparer
+	}
+	entries, err := getAllEntries(c.String("dbpath"), cmp)
 	if err != nil {
 		return err
 	}
@@ -197,7 +218,11 @@ func showCmd(c *cli.Context) error {
 			SetParseJSON(!c.Bool("no-json"))
 	}
 
-	entries, err := getAllEntries(c.String("dbpath"))
+	var cmp comparer.Comparer = comparer.DefaultComparer
+	if c.Bool("indexeddb") {
+		cmp = indexeddb.IndexedDBComparer
+	}
+	entries, err := getAllEntries(c.String("dbpath"), cmp)
 	if err != nil {
 		return err
 	}
@@ -212,8 +237,8 @@ func showCmd(c *cli.Context) error {
 	return nil
 }
 
-func dumpDB(dbpath string, w io.Writer) error {
-	entries, err := getAllEntries(dbpath)
+func dumpDB(dbpath string, cmp comparer.Comparer, w io.Writer) error {
+	entries, err := getAllEntries(dbpath, cmp)
 	if err != nil {
 		return err
 	}
@@ -235,7 +260,7 @@ func dumpDB(dbpath string, w io.Writer) error {
 	return nil
 }
 
-func loadDB(dbpath string, r io.Reader) error {
+func loadDB(dbpath string, cmp comparer.Comparer, r io.Reader) error {
 	dec := msgpack.NewDecoder(r)
 
 	nentries, err := dec.DecodeMapLen()
@@ -256,7 +281,8 @@ func loadDB(dbpath string, r io.Reader) error {
 		entries = append(entries, entry{Key: key, Value: value})
 	}
 
-	db, err := leveldb.OpenFile(dbpath, nil)
+	opts := &opt.Options{Comparer: cmp}
+	db, err := leveldb.OpenFile(dbpath, opts)
 	if err != nil {
 		return err
 	}
@@ -299,6 +325,10 @@ func destroyDB(dbpath string, dryRun bool) error {
 }
 
 func compactCmd(c *cli.Context) error {
+	var cmp comparer.Comparer = comparer.DefaultComparer
+	if c.Bool("indexeddb") {
+		cmp = indexeddb.IndexedDBComparer
+	}
 	dbpath := c.String("dbpath")
 	bakfile := path.Join(dbpath, "leveldb.bak")
 
@@ -308,7 +338,7 @@ func compactCmd(c *cli.Context) error {
 	}
 	defer bak.Close()
 
-	if err := dumpDB(dbpath, bak); err != nil {
+	if err := dumpDB(dbpath, cmp, bak); err != nil {
 		return err
 	}
 
@@ -320,7 +350,7 @@ func compactCmd(c *cli.Context) error {
 		return err
 	}
 
-	if err := loadDB(dbpath, bak); err != nil {
+	if err := loadDB(dbpath, cmp, bak); err != nil {
 		return err
 	}
 

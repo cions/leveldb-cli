@@ -7,6 +7,8 @@ import (
 	"runtime/debug"
 	"strings"
 
+	"github.com/cions/leveldb-cli/indexeddb"
+	"github.com/syndtr/goleveldb/leveldb/comparer"
 	"github.com/urfave/cli/v2"
 )
 
@@ -28,6 +30,11 @@ func main() {
 				Aliases: []string{"d"},
 				EnvVars: []string{"DBPATH"},
 				Value:   ".",
+			},
+			&cli.BoolFlag{
+				Name:    "indexeddb",
+				Aliases: []string{"i"},
+				Usage:   "Open Chromium's IndexedDB database",
 			},
 		},
 		Before: func(c *cli.Context) error {
@@ -162,7 +169,11 @@ func main() {
 				Usage:     "dump the database as MessagePack",
 				ArgsUsage: " ",
 				Action: func(c *cli.Context) error {
-					return dumpDB(c.String("dbpath"), os.Stdout)
+					var cmp comparer.Comparer = comparer.DefaultComparer
+					if c.Bool("indexeddb") {
+						cmp = indexeddb.IndexedDBComparer
+					}
+					return dumpDB(c.String("dbpath"), cmp, os.Stdout)
 				},
 			},
 			{
@@ -170,7 +181,11 @@ func main() {
 				Usage:     "load MessagePack into the database",
 				ArgsUsage: " ",
 				Action: func(c *cli.Context) error {
-					return loadDB(c.String("dbpath"), os.Stdin)
+					var cmp comparer.Comparer = comparer.DefaultComparer
+					if c.Bool("indexeddb") {
+						cmp = indexeddb.IndexedDBComparer
+					}
+					return loadDB(c.String("dbpath"), cmp, os.Stdin)
 				},
 			},
 			{
