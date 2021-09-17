@@ -23,9 +23,14 @@ type entry struct {
 	Key, Value []byte
 }
 
-func getAllEntries(dbpath string, cmp comparer.Comparer) ([]entry, error) {
+func openDb(dbpath string, cmp comparer.Comparer) (*leveldb.DB, error) {
 	opts := &opt.Options{Comparer: cmp, ErrorIfMissing: true, ReadOnly: true}
-	db, err := leveldb.OpenFile(dbpath, opts)
+
+	return leveldb.OpenFile(dbpath, opts)
+}
+
+func getAllEntries(dbpath string, cmp comparer.Comparer) ([]entry, error) {
+	db, err := openDb(dbpath, cmp)
 	if err != nil {
 		return nil, err
 	}
@@ -188,21 +193,30 @@ func keysCmd(c *cli.Context) error {
 	if c.Bool("indexeddb") {
 		cmp = indexeddb.IndexedDBComparer
 	}
-	entries, err := getAllEntries(c.String("dbpath"), cmp)
+
+	db, err := openDb(c.String("dbpath"), cmp)
 	if err != nil {
 		return err
 	}
+	defer db.Close()
 
-	for _, entry := range entries {
-		if _, err := w.Write(entry.Key); err != nil {
+	iter := db.NewIterator(nil, nil)
+	for iter.Next() {
+		// Remember that the contents of the returned slice should not be modified, and
+		// only valid until the next call to Next.
+		key := iter.Key()
+		// value := iter.Value()
+
+		if _, err := w.Write(key); err != nil {
 			return err
 		}
 		if _, err := fmt.Println(); err != nil {
 			return err
 		}
 	}
+	iter.Release()
 
-	return nil
+	return iter.Error()
 }
 
 func showCmd(c *cli.Context) error {
