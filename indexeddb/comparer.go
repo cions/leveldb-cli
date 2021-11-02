@@ -22,32 +22,35 @@ const (
 	blobEntry
 )
 
-func decodeInt(b []byte) int64 {
-	if len(b) == 0 {
+func decodeInt(slice []byte) int64 {
+	if len(slice) == 0 {
 		panic("invalid key")
 	}
 
-	ret := int64(0)
+	v := int64(0)
 	shift := 0
-	for _, x := range b {
-		ret |= int64(x) << shift
+	for _, b := range slice {
+		v |= int64(b) << shift
 		shift += 8
+		if shift >= 64 {
+			panic("invalid key")
+		}
 	}
-	return ret
+	return v
 }
 
-func decodeVarInt(b []byte) ([]byte, int64) {
-	if len(b) == 0 {
+func decodeVarInt(slice []byte) ([]byte, int64) {
+	if len(slice) == 0 {
 		panic("invalid key")
 	}
 
-	var x byte
-	ret := uint64(0)
-	for shift := 0; len(b) != 0 && shift < 64; shift += 7 {
-		x, b = b[0], b[1:]
-		ret |= uint64(x&0x7f) << shift
-		if x&0x80 == 0 {
-			return b, int64(ret)
+	v := uint64(0)
+	for shift := 0; len(slice) != 0 && shift < 64; shift += 7 {
+		b := slice[0]
+		slice = slice[1:]
+		v |= uint64(b&0x7f) << shift
+		if b&0x80 == 0 {
+			return slice, int64(v)
 		}
 	}
 	panic("invalid key")
@@ -157,10 +160,10 @@ func compareEncodedIDBKeys(a, b []byte) ([]byte, []byte, int) {
 		return a[1:], b[1:], ret
 	}
 
-	type_byte := a[0]
+	typeByte := a[0]
 	a, b = a[1:], b[1:]
 
-	switch type_byte {
+	switch typeByte {
 	case 0, 5:
 		return a, b, 0
 	case 4:
@@ -188,36 +191,23 @@ type keyPrefix struct {
 	DatabaseId, ObjectStoreId, IndexId int64
 }
 
-func (self *keyPrefix) Compare(other *keyPrefix) int {
-	if ret := compareInt64(self.DatabaseId, other.DatabaseId); ret != 0 {
-		return ret
-	}
-	if ret := compareInt64(self.ObjectStoreId, other.ObjectStoreId); ret != 0 {
-		return ret
-	}
-	if ret := compareInt64(self.IndexId, other.IndexId); ret != 0 {
-		return ret
-	}
-	return 0
-}
-
-func (self *keyPrefix) Type() int {
-	if self.DatabaseId == 0 {
+func (prefix *keyPrefix) Type() int {
+	if prefix.DatabaseId == 0 {
 		return globalMetadata
 	}
-	if self.ObjectStoreId == 0 {
+	if prefix.ObjectStoreId == 0 {
 		return databaseMetadata
 	}
-	if self.IndexId == 1 {
+	if prefix.IndexId == 1 {
 		return objectStoreData
 	}
-	if self.IndexId == 2 {
+	if prefix.IndexId == 2 {
 		return existsEntry
 	}
-	if self.IndexId == 3 {
+	if prefix.IndexId == 3 {
 		return blobEntry
 	}
-	if self.IndexId >= 30 {
+	if prefix.IndexId >= 30 {
 		return indexData
 	}
 	return invalidType
@@ -228,48 +218,61 @@ func decodeKeyPrefix(b []byte) ([]byte, *keyPrefix) {
 		panic("invalid key")
 	}
 
-	first_byte := b[0]
+	firstByte := b[0]
 	b = b[1:]
 
-	database_id_bytes := int((((first_byte >> 5) & 0x07) + 1))
-	object_store_id_bytes := int(((first_byte >> 2) & 0x07) + 1)
-	index_id_bytes := int((first_byte & 0x03) + 1)
+	databaseIdBytes := int((((firstByte >> 5) & 0x07) + 1))
+	objectStoreIdBytes := int(((firstByte >> 2) & 0x07) + 1)
+	indexIdBytes := int((firstByte & 0x03) + 1)
 
-	if len(b) < database_id_bytes+object_store_id_bytes+index_id_bytes {
+	if len(b) < databaseIdBytes+objectStoreIdBytes+indexIdBytes {
 		panic("invalid key")
 	}
 
-	database_id := decodeInt(b[:database_id_bytes])
-	b = b[database_id_bytes:]
+	databaseId := decodeInt(b[:databaseIdBytes])
+	b = b[databaseIdBytes:]
 
-	object_store_id := decodeInt(b[:object_store_id_bytes])
-	b = b[object_store_id_bytes:]
+	objectStoreId := decodeInt(b[:objectStoreIdBytes])
+	b = b[objectStoreIdBytes:]
 
-	index_id := decodeInt(b[:index_id_bytes])
-	b = b[index_id_bytes:]
+	indexId := decodeInt(b[:indexIdBytes])
+	b = b[indexIdBytes:]
 
-	return b, &keyPrefix{DatabaseId: database_id, ObjectStoreId: object_store_id, IndexId: index_id}
+	return b, &keyPrefix{DatabaseId: databaseId, ObjectStoreId: objectStoreId, IndexId: indexId}
+}
+
+func compareKeyPrefix(a, b *keyPrefix) int {
+	if ret := compareInt64(a.DatabaseId, b.DatabaseId); ret != 0 {
+		return ret
+	}
+	if ret := compareInt64(a.ObjectStoreId, b.ObjectStoreId); ret != 0 {
+		return ret
+	}
+	if ret := compareInt64(a.IndexId, b.IndexId); ret != 0 {
+		return ret
+	}
+	return 0
 }
 
 type indexedDBComparer struct{}
 
 func (indexedDBComparer) Compare(a, b []byte) int {
-	defer func(original_a, original_b []byte) {
+	defer func(a, b []byte) {
 		if err := recover(); err != nil {
 			fmt.Fprintln(os.Stderr, "leveldb: error: idb_cmp1: invalid IndexedDB key found")
-			fmt.Fprintf(os.Stderr, "leveldb: debug: a = %x\n", original_a)
-			fmt.Fprintf(os.Stderr, "leveldb: debug: b = %x\n", original_b)
+			fmt.Fprintf(os.Stderr, "leveldb: debug: a = %x\n", a)
+			fmt.Fprintf(os.Stderr, "leveldb: debug: b = %x\n", b)
 		}
 	}(a, b)
 
-	a, prefix_a := decodeKeyPrefix(a)
-	b, prefix_b := decodeKeyPrefix(b)
+	a, prefixA := decodeKeyPrefix(a)
+	b, prefixB := decodeKeyPrefix(b)
 
-	if ret := prefix_a.Compare(prefix_b); ret != 0 {
+	if ret := compareKeyPrefix(prefixA, prefixB); ret != 0 {
 		return ret
 	}
 
-	switch prefix_a.Type() {
+	switch prefixA.Type() {
 	case globalMetadata:
 		if len(a) == 0 || len(b) == 0 {
 			panic("invalid key")
@@ -279,20 +282,20 @@ func (indexedDBComparer) Compare(a, b []byte) int {
 			return ret
 		}
 
-		type_byte := a[0]
+		typeByte := a[0]
 		a, b = a[1:], b[1:]
 
-		if type_byte < 7 {
+		if typeByte < 7 {
 			return 0
 		}
 
-		switch type_byte {
+		switch typeByte {
 		case 50:
 			return bytes.Compare(a, b)
 		case 100:
-			_, database_id_a := decodeVarInt(a)
-			_, database_id_b := decodeVarInt(b)
-			return compareInt64(database_id_a, database_id_b)
+			_, databaseIdA := decodeVarInt(a)
+			_, databaseIdB := decodeVarInt(b)
+			return compareInt64(databaseIdA, databaseIdB)
 		case 201:
 			a, b, ret := compareStringWithLength(a, b)
 			if ret != 0 {
@@ -311,18 +314,18 @@ func (indexedDBComparer) Compare(a, b []byte) int {
 			return ret
 		}
 
-		type_byte := a[0]
+		typeByte := a[0]
 		a, b = a[1:], b[1:]
 
-		if type_byte < 6 {
+		if typeByte < 6 {
 			return 0
 		}
 
-		switch type_byte {
+		switch typeByte {
 		case 50:
-			a, object_store_id_a := decodeVarInt(a)
-			b, object_store_id_b := decodeVarInt(b)
-			if ret := compareInt64(object_store_id_a, object_store_id_b); ret != 0 {
+			a, objectStoreIdA := decodeVarInt(a)
+			b, objectStoreIdB := decodeVarInt(b)
+			if ret := compareInt64(objectStoreIdA, objectStoreIdB); ret != 0 {
 				return ret
 			}
 
@@ -331,15 +334,15 @@ func (indexedDBComparer) Compare(a, b []byte) int {
 			}
 			return compareByte(a[0], b[0])
 		case 100:
-			a, object_store_id_a := decodeVarInt(a)
-			b, object_store_id_b := decodeVarInt(b)
-			if ret := compareInt64(object_store_id_a, object_store_id_b); ret != 0 {
+			a, objectStoreIdA := decodeVarInt(a)
+			b, objectStoreIdB := decodeVarInt(b)
+			if ret := compareInt64(objectStoreIdA, objectStoreIdB); ret != 0 {
 				return ret
 			}
 
-			a, index_id_a := decodeVarInt(a)
-			b, index_id_b := decodeVarInt(b)
-			if ret := compareInt64(index_id_a, index_id_b); ret != 0 {
+			a, indexIdA := decodeVarInt(a)
+			b, indexIdB := decodeVarInt(b)
+			if ret := compareInt64(indexIdA, indexIdB); ret != 0 {
 				return ret
 			}
 
@@ -348,26 +351,26 @@ func (indexedDBComparer) Compare(a, b []byte) int {
 			}
 			return compareByte(a[0], b[0])
 		case 150:
-			_, object_store_id_a := decodeVarInt(a)
-			_, object_store_id_b := decodeVarInt(b)
-			return compareInt64(object_store_id_a, object_store_id_b)
+			_, objectStoreIdA := decodeVarInt(a)
+			_, objectStoreIdB := decodeVarInt(b)
+			return compareInt64(objectStoreIdA, objectStoreIdB)
 		case 151:
-			a, object_store_id_a := decodeVarInt(a)
-			b, object_store_id_b := decodeVarInt(b)
-			if ret := compareInt64(object_store_id_a, object_store_id_b); ret != 0 {
+			a, objectStoreIdA := decodeVarInt(a)
+			b, objectStoreIdB := decodeVarInt(b)
+			if ret := compareInt64(objectStoreIdA, objectStoreIdB); ret != 0 {
 				return ret
 			}
 
-			_, index_id_a := decodeVarInt(a)
-			_, index_id_b := decodeVarInt(b)
-			return compareInt64(index_id_a, index_id_b)
+			_, indexIdA := decodeVarInt(a)
+			_, indexIdB := decodeVarInt(b)
+			return compareInt64(indexIdA, indexIdB)
 		case 200:
 			_, _, ret := compareStringWithLength(a, b)
 			return ret
 		case 201:
-			a, object_store_id_a := decodeVarInt(a)
-			b, object_store_id_b := decodeVarInt(b)
-			if ret := compareInt64(object_store_id_a, object_store_id_b); ret != 0 {
+			a, objectStoreIdA := decodeVarInt(a)
+			b, objectStoreIdB := decodeVarInt(b)
+			if ret := compareInt64(objectStoreIdA, objectStoreIdB); ret != 0 {
 				return ret
 			}
 
@@ -405,13 +408,13 @@ func (indexedDBComparer) Compare(a, b []byte) int {
 			return ret
 		}
 
-		var sequence_number_a int64 = -1
-		var sequence_number_b int64 = -1
+		var sequenceNumberA int64 = -1
+		var sequenceNumberB int64 = -1
 		if len(a) > 0 {
-			a, sequence_number_a = decodeVarInt(a)
+			a, sequenceNumberA = decodeVarInt(a)
 		}
 		if len(b) > 0 {
-			b, sequence_number_b = decodeVarInt(b)
+			b, sequenceNumberB = decodeVarInt(b)
 		}
 
 		if len(a) == 0 || len(b) == 0 {
@@ -423,7 +426,7 @@ func (indexedDBComparer) Compare(a, b []byte) int {
 			return ret
 		}
 
-		return compareInt64(sequence_number_a, sequence_number_b)
+		return compareInt64(sequenceNumberA, sequenceNumberB)
 	}
 	panic("invalid key")
 }
@@ -440,4 +443,5 @@ func (indexedDBComparer) Successor(dst, b []byte) []byte {
 	return nil
 }
 
+// IndexedDBComparer implements the idb_cmp1 comparer used in Chromium IndexedDB implementation.
 var IndexedDBComparer comparer.Comparer = indexedDBComparer{}
