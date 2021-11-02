@@ -1,3 +1,2 @@
-leveldb
-leveldb.exe
-!leveldb/
+/leveldb
+/leveldb.exe

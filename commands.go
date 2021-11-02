@@ -1,7 +1,6 @@
-package main
+package leveldbcli
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -17,62 +16,35 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 )
 
-var leveldbFilenamePattern = regexp.MustCompile(`^(?:LOCK|LOG(?:\.old)?|CURRENT(?:\.bak|\.\d+)?|MANIFEST-\d+|\d+\.(?:ldb|log|sst|tmp))$`)
-
 type entry struct {
 	Key, Value []byte
 }
 
-func getAllEntries(dbpath string, cmp comparer.Comparer) ([]entry, error) {
-	opts := &opt.Options{Comparer: cmp, ErrorIfMissing: true, ReadOnly: true}
-	db, err := leveldb.OpenFile(dbpath, opts)
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
-
-	s, err := db.GetSnapshot()
-	if err != nil {
-		return nil, err
-	}
-
-	var entries []entry
-
-	iter := s.NewIterator(nil, nil)
-	for iter.Next() {
-		key := make([]byte, len(iter.Key()))
-		copy(key, iter.Key())
-		value := make([]byte, len(iter.Value()))
-		copy(value, iter.Value())
-		entries = append(entries, entry{Key: key, Value: value})
-	}
-	iter.Release()
-	if err := iter.Error(); err != nil {
-		return nil, err
-	}
-
-	return entries, nil
-}
+var leveldbFilenamePattern = regexp.MustCompile(`^(?:LOCK|LOG(?:\.old)?|CURRENT(?:\.bak|\.\d+)?|MANIFEST-\d+|\d+\.(?:ldb|log|sst|tmp))$`)
 
 func initCmd(c *cli.Context) error {
 	var cmp comparer.Comparer = comparer.DefaultComparer
 	if c.Bool("indexeddb") {
 		cmp = indexeddb.IndexedDBComparer
 	}
+
 	opts := &opt.Options{Comparer: cmp, ErrorIfExist: true}
 	db, err := leveldb.OpenFile(c.String("dbpath"), opts)
 	if err != nil {
 		return err
 	}
-	return db.Close()
+	if err := db.Close(); err != nil {
+		return err
+	}
+
+	return nil
 }
 
-func getCmd(c *cli.Context) error {
+func getCmd(c *cli.Context) (err error) {
 	if c.NArg() < 1 {
 		cli.ShowCommandHelpAndExit(c, "get", 2)
 	}
 
-	var err error
 	key := []byte(c.Args().Get(0))
 	if c.Bool("base64") {
 		key, err = decodeBase64(key)
@@ -87,6 +59,7 @@ func getCmd(c *cli.Context) error {
 	if c.Bool("indexeddb") {
 		cmp = indexeddb.IndexedDBComparer
 	}
+
 	opts := &opt.Options{Comparer: cmp, ErrorIfMissing: true, ReadOnly: true}
 	db, err := leveldb.OpenFile(c.String("dbpath"), opts)
 	if err != nil {
@@ -98,19 +71,21 @@ func getCmd(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	_, err = os.Stdout.Write(value)
-	return err
+	if _, err := os.Stdout.Write(value); err != nil {
+		return err
+	}
+
+	if err := db.Close(); err != nil {
+		return err
+	}
+
+	return nil
 }
 
-func putCmd(c *cli.Context) error {
+func putCmd(c *cli.Context) (err error) {
 	if c.NArg() < 1 {
 		cli.ShowCommandHelpAndExit(c, "put", 2)
 	}
-	if c.Bool("indexeddb") {
-		return errors.New("modifying IndexedDB database is not supported")
-	}
-
-	var err error
 
 	key := []byte(c.Args().Get(0))
 	if c.Bool("base64") {
@@ -137,25 +112,34 @@ func putCmd(c *cli.Context) error {
 		return err
 	}
 
-	opts := &opt.Options{ErrorIfMissing: true}
+	var cmp comparer.Comparer = comparer.DefaultComparer
+	if c.Bool("indexeddb") {
+		cmp = indexeddb.IndexedDBComparer
+	}
+
+	opts := &opt.Options{Comparer: cmp, ErrorIfMissing: true}
 	db, err := leveldb.OpenFile(c.String("dbpath"), opts)
 	if err != nil {
 		return err
 	}
 	defer db.Close()
 
-	return db.Put(key, value, nil)
+	if err := db.Put(key, value, nil); err != nil {
+		return err
+	}
+
+	if err := db.Close(); err != nil {
+		return err
+	}
+
+	return nil
 }
 
-func deleteCmd(c *cli.Context) error {
+func deleteCmd(c *cli.Context) (err error) {
 	if c.NArg() < 1 {
 		cli.ShowCommandHelpAndExit(c, "delete", 2)
 	}
-	if c.Bool("indexeddb") {
-		return errors.New("modifying IndexedDB database is not supported")
-	}
 
-	var err error
 	key := []byte(c.Args().Get(0))
 	if c.Bool("base64") {
 		key, err = decodeBase64(key)
@@ -166,14 +150,27 @@ func deleteCmd(c *cli.Context) error {
 		return err
 	}
 
-	opts := &opt.Options{ErrorIfMissing: true}
+	var cmp comparer.Comparer = comparer.DefaultComparer
+	if c.Bool("indexeddb") {
+		cmp = indexeddb.IndexedDBComparer
+	}
+
+	opts := &opt.Options{Comparer: cmp, ErrorIfMissing: true}
 	db, err := leveldb.OpenFile(c.String("dbpath"), opts)
 	if err != nil {
 		return err
 	}
 	defer db.Close()
 
-	return db.Delete(key, nil)
+	if err := db.Delete(key, nil); err != nil {
+		return err
+	}
+
+	if err := db.Close(); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func keysCmd(c *cli.Context) error {
@@ -188,18 +185,38 @@ func keysCmd(c *cli.Context) error {
 	if c.Bool("indexeddb") {
 		cmp = indexeddb.IndexedDBComparer
 	}
-	entries, err := getAllEntries(c.String("dbpath"), cmp)
+
+	opts := &opt.Options{Comparer: cmp, ErrorIfMissing: true, ReadOnly: true}
+	db, err := leveldb.OpenFile(c.String("dbpath"), opts)
 	if err != nil {
 		return err
 	}
+	defer db.Close()
 
-	for _, entry := range entries {
-		if _, err := w.Write(entry.Key); err != nil {
+	s, err := db.GetSnapshot()
+	if err != nil {
+		return err
+	}
+	defer s.Release()
+
+	iter := s.NewIterator(nil, nil)
+	defer iter.Release()
+	for iter.Next() {
+		if _, err := w.Write(iter.Key()); err != nil {
 			return err
 		}
-		if _, err := fmt.Println(); err != nil {
+		if _, err := os.Stdout.WriteString("\n"); err != nil {
 			return err
 		}
+	}
+	if err := iter.Error(); err != nil {
+		return err
+	}
+
+	iter.Release()
+	s.Release()
+	if err := db.Close(); err != nil {
+		return err
 	}
 
 	return nil
@@ -222,32 +239,82 @@ func showCmd(c *cli.Context) error {
 	if c.Bool("indexeddb") {
 		cmp = indexeddb.IndexedDBComparer
 	}
-	entries, err := getAllEntries(c.String("dbpath"), cmp)
+
+	opts := &opt.Options{Comparer: cmp, ErrorIfMissing: true, ReadOnly: true}
+	db, err := leveldb.OpenFile(c.String("dbpath"), opts)
 	if err != nil {
 		return err
 	}
+	defer db.Close()
 
-	for _, entry := range entries {
-		kw.Write(entry.Key)
-		fmt.Print(": ")
-		vw.Write(entry.Value)
-		fmt.Println()
+	s, err := db.GetSnapshot()
+	if err != nil {
+		return err
+	}
+	defer s.Release()
+
+	iter := s.NewIterator(nil, nil)
+	defer iter.Release()
+	for iter.Next() {
+		if _, err := kw.Write(iter.Key()); err != nil {
+			return err
+		}
+		if _, err := os.Stdout.WriteString(": "); err != nil {
+			return err
+		}
+		if _, err := vw.Write(iter.Value()); err != nil {
+			return err
+		}
+		if _, err := os.Stdout.WriteString("\n"); err != nil {
+			return err
+		}
+	}
+	if err := iter.Error(); err != nil {
+		return err
+	}
+
+	iter.Release()
+	s.Release()
+	if err := db.Close(); err != nil {
+		return err
 	}
 
 	return nil
 }
 
 func dumpDB(dbpath string, cmp comparer.Comparer, w io.Writer) error {
-	entries, err := getAllEntries(dbpath, cmp)
+	opts := &opt.Options{Comparer: cmp, ErrorIfMissing: true, ReadOnly: true}
+	db, err := leveldb.OpenFile(dbpath, opts)
 	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	s, err := db.GetSnapshot()
+	if err != nil {
+		return err
+	}
+	defer s.Release()
+
+	var entries []entry
+	iter := s.NewIterator(nil, nil)
+	defer iter.Release()
+	for iter.Next() {
+		key := make([]byte, len(iter.Key()))
+		copy(key, iter.Key())
+		value := make([]byte, len(iter.Value()))
+		copy(value, iter.Value())
+		entries = append(entries, entry{Key: key, Value: value})
+	}
+	if err := iter.Error(); err != nil {
 		return err
 	}
 
 	enc := msgpack.NewEncoder(w)
+	enc.UseCompactInts(true)
 	if err := enc.EncodeMapLen(len(entries)); err != nil {
 		return err
 	}
-
 	for _, entry := range entries {
 		if err := enc.EncodeBytes(entry.Key); err != nil {
 			return err
@@ -255,6 +322,12 @@ func dumpDB(dbpath string, cmp comparer.Comparer, w io.Writer) error {
 		if err := enc.EncodeBytes(entry.Value); err != nil {
 			return err
 		}
+	}
+
+	iter.Release()
+	s.Release()
+	if err := db.Close(); err != nil {
+		return err
 	}
 
 	return nil
@@ -268,7 +341,7 @@ func loadDB(dbpath string, cmp comparer.Comparer, r io.Reader) error {
 		return err
 	}
 
-	entries := make([]entry, 0, nentries)
+	entries := make([]entry, nentries)
 	for i := 0; i < nentries; i++ {
 		key, err := dec.DecodeBytes()
 		if err != nil {
@@ -278,7 +351,8 @@ func loadDB(dbpath string, cmp comparer.Comparer, r io.Reader) error {
 		if err != nil {
 			return err
 		}
-		entries = append(entries, entry{Key: key, Value: value})
+		entries[i].Key = key
+		entries[i].Value = value
 	}
 
 	opts := &opt.Options{Comparer: cmp}
@@ -292,7 +366,15 @@ func loadDB(dbpath string, cmp comparer.Comparer, r io.Reader) error {
 	for _, entry := range entries {
 		batch.Put(entry.Key, entry.Value)
 	}
-	return db.Write(batch, nil)
+	if err := db.Write(batch, nil); err != nil {
+		return err
+	}
+
+	if err := db.Close(); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func destroyDB(dbpath string, dryRun bool) error {
@@ -321,39 +403,64 @@ func destroyDB(dbpath string, dryRun bool) error {
 		}
 	}
 
+	if err := dir.Close(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
-func compactCmd(c *cli.Context) error {
+func dumpCmd(c *cli.Context) error {
 	var cmp comparer.Comparer = comparer.DefaultComparer
 	if c.Bool("indexeddb") {
 		cmp = indexeddb.IndexedDBComparer
 	}
+	return dumpDB(c.String("dbpath"), cmp, os.Stdout)
+}
+
+func loadCmd(c *cli.Context) error {
+	var cmp comparer.Comparer = comparer.DefaultComparer
+	if c.Bool("indexeddb") {
+		cmp = indexeddb.IndexedDBComparer
+	}
+	return loadDB(c.String("dbpath"), cmp, os.Stdin)
+}
+
+func compactCmd(c *cli.Context) error {
 	dbpath := c.String("dbpath")
 	bakfile := path.Join(dbpath, "leveldb.bak")
+	var cmp comparer.Comparer = comparer.DefaultComparer
+	if c.Bool("indexeddb") {
+		cmp = indexeddb.IndexedDBComparer
+	}
 
 	bak, err := os.OpenFile(bakfile, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return err
 	}
 	defer bak.Close()
-
 	if err := dumpDB(dbpath, cmp, bak); err != nil {
 		return err
 	}
-
 	if _, err := bak.Seek(0, os.SEEK_SET); err != nil {
 		return err
 	}
-
 	if err := destroyDB(dbpath, false); err != nil {
 		return err
 	}
-
 	if err := loadDB(dbpath, cmp, bak); err != nil {
 		return err
 	}
+	if err := bak.Close(); err != nil {
+		return err
+	}
+	if err := os.Remove(bakfile); err != nil {
+		return err
+	}
 
-	bak.Close()
-	return os.Remove(bakfile)
+	return nil
+}
+
+func destroyCmd(c *cli.Context) error {
+	return destroyDB(c.String("dbpath"), c.Bool("dry-run"))
 }
