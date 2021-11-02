@@ -127,7 +127,49 @@ func Main(args []string) error {
 					&cli.BoolFlag{
 						Name:    "base64",
 						Aliases: []string{"b"},
-						Usage:   "Show keys in base64 encoding",
+						Usage:   "show keys in base64 encoding",
+					},
+					&cli.StringFlag{
+						Name:    "start",
+						Aliases: []string{"s"},
+						Usage:   "start of the `key` range (inclusive)",
+					},
+					&cli.StringFlag{
+						Name:    "start-raw",
+						Aliases: []string{"S"},
+						Usage:   "start of the `key` range (no backslash escapes, inclusive)",
+					},
+					&cli.StringFlag{
+						Name:  "start-base64",
+						Usage: "start of the `key` range (base64, inclusive)",
+					},
+					&cli.StringFlag{
+						Name:    "end",
+						Aliases: []string{"e"},
+						Usage:   "end of the `key` range (exclusive)",
+					},
+					&cli.StringFlag{
+						Name:    "end-raw",
+						Aliases: []string{"E"},
+						Usage:   "end of the `key` range (no backslash escapes, exclusive)",
+					},
+					&cli.StringFlag{
+						Name:  "end-base64",
+						Usage: "end of the `key` range (base64, exclusive)",
+					},
+					&cli.StringFlag{
+						Name:    "prefix",
+						Aliases: []string{"p"},
+						Usage:   "limit the key range to a range that satisfy the given `prefix`",
+					},
+					&cli.StringFlag{
+						Name:    "prefix-raw",
+						Aliases: []string{"P"},
+						Usage:   "limit the key range to a range that satisfy the given `prefix` (no backslash escapes)",
+					},
+					&cli.StringFlag{
+						Name:  "prefix-base64",
+						Usage: "limit the key range to a range that satisfy the given `prefix` (base64)",
 					},
 				},
 				Action: keysCmd,
@@ -146,7 +188,7 @@ func Main(args []string) error {
 					&cli.BoolFlag{
 						Name:    "base64",
 						Aliases: []string{"b"},
-						Usage:   "Show keys and values in base64 encoding",
+						Usage:   "show keys and values in base64 encoding",
 					},
 					&cli.BoolFlag{
 						Name:    "no-json",
@@ -157,6 +199,48 @@ func Main(args []string) error {
 						Name:    "no-truncate",
 						Aliases: []string{"w"},
 						Usage:   "do not truncate output",
+					},
+					&cli.StringFlag{
+						Name:    "start",
+						Aliases: []string{"s"},
+						Usage:   "start of the `key` range (inclusive)",
+					},
+					&cli.StringFlag{
+						Name:    "start-raw",
+						Aliases: []string{"S"},
+						Usage:   "start of the `key` range (no backslash escapes, inclusive)",
+					},
+					&cli.StringFlag{
+						Name:  "start-base64",
+						Usage: "start of the `key` range (base64, inclusive)",
+					},
+					&cli.StringFlag{
+						Name:    "end",
+						Aliases: []string{"e"},
+						Usage:   "end of the `key` range (exclusive)",
+					},
+					&cli.StringFlag{
+						Name:    "end-raw",
+						Aliases: []string{"E"},
+						Usage:   "end of the `key` range (no backslash escapes, exclusive)",
+					},
+					&cli.StringFlag{
+						Name:  "end-base64",
+						Usage: "end of the `key` range (base64, exclusive)",
+					},
+					&cli.StringFlag{
+						Name:    "prefix",
+						Aliases: []string{"p"},
+						Usage:   "limit the key range to a range that satisfy the given `prefix`",
+					},
+					&cli.StringFlag{
+						Name:    "prefix-raw",
+						Aliases: []string{"P"},
+						Usage:   "limit the key range to a range that satisfy the given `prefix` (no backslash escapes)",
+					},
+					&cli.StringFlag{
+						Name:  "prefix-base64",
+						Usage: "limit the key range to a range that satisfy the given `prefix` (base64)",
 					},
 				},
 				UseShortOptionHandling: true,

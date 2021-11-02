@@ -1,6 +1,8 @@
 package leveldbcli
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -12,6 +14,7 @@ import (
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/comparer"
 	"github.com/syndtr/goleveldb/leveldb/opt"
+	"github.com/syndtr/goleveldb/leveldb/util"
 	"github.com/urfave/cli/v2"
 	"github.com/vmihailenco/msgpack/v5"
 )
@@ -173,6 +176,84 @@ func deleteCmd(c *cli.Context) (err error) {
 	return nil
 }
 
+func getKeyRange(c *cli.Context) (*util.Range, error) {
+	if c.IsSet("prefix-base64") {
+		if c.Bool("indexeddb") {
+			return nil, errors.New("use of --prefix-base64 in conjunction with --indexeddb is not supported")
+		}
+		prefix, err := decodeBase64([]byte(c.String("prefix-base64")))
+		if err != nil {
+			return nil, fmt.Errorf("option --prefix-base64: %w", err)
+		}
+		return util.BytesPrefix(prefix), nil
+	}
+	if c.IsSet("prefix-raw") {
+		if c.Bool("indexeddb") {
+			return nil, errors.New("use of --prefix-raw in conjunction with --indexeddb is not supported")
+		}
+		return util.BytesPrefix([]byte(c.String("prefix-raw"))), nil
+	}
+	if c.IsSet("prefix") {
+		if c.Bool("indexeddb") {
+			return nil, errors.New("use of --prefix in conjunction with --indexeddb is not supported")
+		}
+		prefix, err := unescape([]byte(c.String("prefix")))
+		if err != nil {
+			return nil, fmt.Errorf("option --prefix: %w", err)
+		}
+		return util.BytesPrefix(prefix), nil
+	}
+
+	slice := &util.Range{}
+
+	if c.IsSet("start-base64") {
+		start, err := decodeBase64([]byte(c.String("start-base64")))
+		if err != nil {
+			return nil, fmt.Errorf("option --start-base64: %w", err)
+		}
+		slice.Start = start
+	} else if c.IsSet("start-raw") {
+		slice.Start = []byte(c.String("start-raw"))
+	} else if c.IsSet("start") {
+		start, err := unescape([]byte(c.String("start")))
+		if err != nil {
+			return nil, fmt.Errorf("option --start: %w", err)
+		}
+		slice.Start = start
+	}
+
+	if c.IsSet("end-base64") {
+		end, err := decodeBase64([]byte(c.String("end-base64")))
+		if err != nil {
+			return nil, fmt.Errorf("option --end-base64: %w", err)
+		}
+		slice.Limit = end
+	} else if c.IsSet("end-raw") {
+		slice.Limit = []byte(c.String("end-raw"))
+	} else if c.IsSet("end") {
+		end, err := unescape([]byte(c.String("end")))
+		if err != nil {
+			return nil, fmt.Errorf("option --end: %w", err)
+		}
+		slice.Limit = end
+	}
+
+	if slice.Start != nil && slice.Limit != nil {
+		var cmp func([]byte, []byte) int = bytes.Compare
+		if c.Bool("indexeddb") {
+			cmp = indexeddb.IndexedDBComparer.Compare
+		}
+		if cmp(slice.Start, slice.Limit) > 0 {
+			slice.Limit = slice.Start
+		}
+	}
+
+	if slice.Start == nil && slice.Limit == nil {
+		return nil, nil
+	}
+	return slice, nil
+}
+
 func keysCmd(c *cli.Context) error {
 	var w io.Writer = os.Stdout
 	if c.Bool("base64") {
@@ -184,6 +265,11 @@ func keysCmd(c *cli.Context) error {
 	var cmp comparer.Comparer = comparer.DefaultComparer
 	if c.Bool("indexeddb") {
 		cmp = indexeddb.IndexedDBComparer
+	}
+
+	slice, err := getKeyRange(c)
+	if err != nil {
+		return err
 	}
 
 	opts := &opt.Options{Comparer: cmp, ErrorIfMissing: true, ReadOnly: true}
@@ -199,7 +285,7 @@ func keysCmd(c *cli.Context) error {
 	}
 	defer s.Release()
 
-	iter := s.NewIterator(nil, nil)
+	iter := s.NewIterator(slice, nil)
 	defer iter.Release()
 	for iter.Next() {
 		if _, err := w.Write(iter.Key()); err != nil {
@@ -240,6 +326,11 @@ func showCmd(c *cli.Context) error {
 		cmp = indexeddb.IndexedDBComparer
 	}
 
+	slice, err := getKeyRange(c)
+	if err != nil {
+		return err
+	}
+
 	opts := &opt.Options{Comparer: cmp, ErrorIfMissing: true, ReadOnly: true}
 	db, err := leveldb.OpenFile(c.String("dbpath"), opts)
 	if err != nil {
@@ -253,7 +344,7 @@ func showCmd(c *cli.Context) error {
 	}
 	defer s.Release()
 
-	iter := s.NewIterator(nil, nil)
+	iter := s.NewIterator(slice, nil)
 	defer iter.Release()
 	for iter.Next() {
 		if _, err := kw.Write(iter.Key()); err != nil {
