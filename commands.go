@@ -536,6 +536,9 @@ func compactCmd(c *cli.Context) error {
 	if _, err := bak.Seek(0, os.SEEK_SET); err != nil {
 		return err
 	}
+	if err := bak.Sync(); err != nil {
+		return err
+	}
 	if err := destroyDB(dbpath, false); err != nil {
 		return err
 	}
