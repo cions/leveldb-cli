@@ -2,7 +2,6 @@ package leveldbcli
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -178,28 +177,29 @@ func deleteCmd(c *cli.Context) (err error) {
 
 func getKeyRange(c *cli.Context) (*util.Range, error) {
 	if c.IsSet("prefix-base64") {
-		if c.Bool("indexeddb") {
-			return nil, errors.New("use of --prefix-base64 in conjunction with --indexeddb is not supported")
-		}
 		prefix, err := decodeBase64([]byte(c.String("prefix-base64")))
 		if err != nil {
 			return nil, fmt.Errorf("option --prefix-base64: %w", err)
 		}
+		if c.Bool("indexeddb") {
+			return indexeddb.Prefix(prefix), nil
+		}
 		return util.BytesPrefix(prefix), nil
 	}
 	if c.IsSet("prefix-raw") {
+		prefix := []byte(c.String("prefix-raw"))
 		if c.Bool("indexeddb") {
-			return nil, errors.New("use of --prefix-raw in conjunction with --indexeddb is not supported")
+			return indexeddb.Prefix(prefix), nil
 		}
-		return util.BytesPrefix([]byte(c.String("prefix-raw"))), nil
+		return util.BytesPrefix(prefix), nil
 	}
 	if c.IsSet("prefix") {
-		if c.Bool("indexeddb") {
-			return nil, errors.New("use of --prefix in conjunction with --indexeddb is not supported")
-		}
 		prefix, err := unescape([]byte(c.String("prefix")))
 		if err != nil {
 			return nil, fmt.Errorf("option --prefix: %w", err)
+		}
+		if c.Bool("indexeddb") {
+			return indexeddb.Prefix(prefix), nil
 		}
 		return util.BytesPrefix(prefix), nil
 	}
