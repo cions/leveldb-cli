@@ -27,25 +27,21 @@ func decodeInt(slice []byte) int64 {
 		panic("invalid key")
 	}
 
-	v := int64(0)
+	var v uint64 = 0
 	shift := 0
 	for _, b := range slice {
-		v |= int64(b) << shift
-		shift += 8
 		if shift >= 64 {
 			panic("invalid key")
 		}
+		v |= uint64(b) << shift
+		shift += 8
 	}
-	return v
+	return int64(v)
 }
 
 func decodeVarInt(slice []byte) ([]byte, int64) {
-	if len(slice) == 0 {
-		panic("invalid key")
-	}
-
-	v := uint64(0)
-	for shift := 0; len(slice) != 0 && shift < 64; shift += 7 {
+	var v uint64 = 0
+	for shift := 0; len(slice) > 0 && shift < 64; shift += 7 {
 		b := slice[0]
 		slice = slice[1:]
 		v |= uint64(b&0x7f) << shift
@@ -88,12 +84,12 @@ func compareInt64(a, b int64) int {
 
 func compareBinary(a, b []byte) ([]byte, []byte, int) {
 	a, len1 := decodeVarInt(a)
-	if len1 < 0 || int64(len(a)) < len1 {
+	if len1 < 0 || uint64(len(a)) < uint64(len1) {
 		panic("invalid key")
 	}
 
 	b, len2 := decodeVarInt(b)
-	if len2 < 0 || int64(len(b)) < len2 {
+	if len2 < 0 || uint64(len(b)) < uint64(len2) {
 		panic("invalid key")
 	}
 
@@ -101,17 +97,19 @@ func compareBinary(a, b []byte) ([]byte, []byte, int) {
 }
 
 func compareStringWithLength(a, b []byte) ([]byte, []byte, int) {
-	a, len1 := decodeVarInt(a)
-	if len1 < 0 || int64(len(a)) < 2*len1 {
+	a, v1 := decodeVarInt(a)
+	len1 := 2 * uint64(v1)
+	if v1 < 0 || uint64(len(a)) < len1 {
 		panic("invalid key")
 	}
 
-	b, len2 := decodeVarInt(b)
-	if len2 < 0 || int64(len(b)) < 2*len2 {
+	b, v2 := decodeVarInt(b)
+	len2 := 2 * uint64(v2)
+	if v2 < 0 || uint64(len(b)) < len2 {
 		panic("invalid key")
 	}
 
-	return a[2*len1:], b[2*len2:], bytes.Compare(a[:2*len1], b[:2*len2])
+	return a[len1:], b[len2:], bytes.Compare(a[:len1], b[:len2])
 }
 
 func compareDouble(a, b []byte) ([]byte, []byte, int) {
