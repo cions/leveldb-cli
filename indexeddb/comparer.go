@@ -84,13 +84,30 @@ func compareInt64(a, b int64) int {
 
 func compareBinary(a, b []byte) ([]byte, []byte, int) {
 	a, len1 := decodeVarInt(a)
-	if len1 < 0 || uint64(len(a)) < uint64(len1) {
+	if len1 < 0 {
 		panic("invalid key")
 	}
 
 	b, len2 := decodeVarInt(b)
-	if len2 < 0 || uint64(len(b)) < uint64(len2) {
+	if len2 < 0 {
 		panic("invalid key")
+	}
+
+	if uint64(len(a)) < uint64(len1) || uint64(len(b)) < uint64(len2) {
+		minlen := uint64(len1)
+		if uint64(len2) < minlen {
+			minlen = uint64(len2)
+		}
+		if uint64(len(a)) < minlen {
+			minlen = uint64(len(a))
+		}
+		if uint64(len(b)) < minlen {
+			minlen = uint64(len(b))
+		}
+		if ret := bytes.Compare(a[:minlen], b[:minlen]); ret != 0 {
+			return nil, nil, ret
+		}
+		return nil, nil, compareInt64(len1, len2)
 	}
 
 	return a[len1:], b[len2:], bytes.Compare(a[:len1], b[:len2])
@@ -99,14 +116,31 @@ func compareBinary(a, b []byte) ([]byte, []byte, int) {
 func compareStringWithLength(a, b []byte) ([]byte, []byte, int) {
 	a, v1 := decodeVarInt(a)
 	len1 := 2 * uint64(v1)
-	if v1 < 0 || uint64(len(a)) < len1 {
+	if v1 < 0 {
 		panic("invalid key")
 	}
 
 	b, v2 := decodeVarInt(b)
 	len2 := 2 * uint64(v2)
-	if v2 < 0 || uint64(len(b)) < len2 {
+	if v2 < 0 {
 		panic("invalid key")
+	}
+
+	if uint64(len(a)) < len1 || uint64(len(b)) < len2 {
+		minlen := len1
+		if len2 < minlen {
+			minlen = len2
+		}
+		if uint64(len(a)) < minlen {
+			minlen = uint64(len(a))
+		}
+		if uint64(len(b)) < minlen {
+			minlen = uint64(len(b))
+		}
+		if ret := bytes.Compare(a[:minlen], b[:minlen]); ret != 0 {
+			return nil, nil, ret
+		}
+		return nil, nil, compareInt64(v1, v2)
 	}
 
 	return a[len1:], b[len2:], bytes.Compare(a[:len1], b[:len2])
@@ -151,7 +185,7 @@ func keyTypeByteToKeyType(b byte) int {
 
 func compareEncodedIDBKeys(a, b []byte) ([]byte, []byte, int) {
 	if len(a) == 0 || len(b) == 0 {
-		panic("invalid key")
+		return a, b, compareInt(len(a), len(b))
 	}
 
 	if ret := compareInt(keyTypeByteToKeyType(a[0]), keyTypeByteToKeyType(b[0])); ret != 0 {
@@ -161,6 +195,10 @@ func compareEncodedIDBKeys(a, b []byte) ([]byte, []byte, int) {
 	typeByte := a[0]
 	a, b = a[1:], b[1:]
 
+	if len(a) == 0 || len(b) == 0 {
+		return a, b, compareInt(len(a), len(b))
+	}
+
 	switch typeByte {
 	case 0, 5:
 		return a, b, 0
@@ -169,6 +207,9 @@ func compareEncodedIDBKeys(a, b []byte) ([]byte, []byte, int) {
 		a, len1 := decodeVarInt(a)
 		b, len2 := decodeVarInt(b)
 		for i := int64(0); i < len1 && i < len2; i++ {
+			if len(a) == 0 || len(b) == 0 {
+				break
+			}
 			a, b, ret = compareEncodedIDBKeys(a, b)
 			if ret != 0 {
 				return a, b, ret
@@ -257,7 +298,7 @@ type indexedDBComparer struct{}
 func (indexedDBComparer) Compare(a, b []byte) int {
 	defer func(a, b []byte) {
 		if err := recover(); err != nil {
-			fmt.Fprintln(os.Stderr, "leveldb: error: idb_cmp1: invalid IndexedDB key found")
+			fmt.Fprintln(os.Stderr, "leveldb: warning: idb_cmp1: invalid IndexedDB key found")
 			fmt.Fprintf(os.Stderr, "leveldb: debug: a = %x\n", a)
 			fmt.Fprintf(os.Stderr, "leveldb: debug: b = %x\n", b)
 		}
@@ -273,9 +314,8 @@ func (indexedDBComparer) Compare(a, b []byte) int {
 	switch prefixA.Type() {
 	case globalMetadata:
 		if len(a) == 0 || len(b) == 0 {
-			panic("invalid key")
+			return compareInt(len(a), len(b))
 		}
-
 		if ret := compareByte(a[0], b[0]); ret != 0 {
 			return ret
 		}
@@ -291,23 +331,31 @@ func (indexedDBComparer) Compare(a, b []byte) int {
 		case 50:
 			return bytes.Compare(a, b)
 		case 100:
+			if len(a) == 0 || len(b) == 0 {
+				return compareInt(len(a), len(b))
+			}
 			_, databaseIdA := decodeVarInt(a)
 			_, databaseIdB := decodeVarInt(b)
 			return compareInt64(databaseIdA, databaseIdB)
 		case 201:
+			if len(a) == 0 || len(b) == 0 {
+				return compareInt(len(a), len(b))
+			}
 			a, b, ret := compareStringWithLength(a, b)
 			if ret != 0 {
 				return ret
 			}
 
+			if len(a) == 0 || len(b) == 0 {
+				return compareInt(len(a), len(b))
+			}
 			_, _, ret = compareStringWithLength(a, b)
 			return ret
 		}
 	case databaseMetadata:
 		if len(a) == 0 || len(b) == 0 {
-			panic("invalid key")
+			return compareInt(len(a), len(b))
 		}
-
 		if ret := compareByte(a[0], b[0]); ret != 0 {
 			return ret
 		}
@@ -321,6 +369,9 @@ func (indexedDBComparer) Compare(a, b []byte) int {
 
 		switch typeByte {
 		case 50:
+			if len(a) == 0 || len(b) == 0 {
+				return compareInt(len(a), len(b))
+			}
 			a, objectStoreIdA := decodeVarInt(a)
 			b, objectStoreIdB := decodeVarInt(b)
 			if ret := compareInt64(objectStoreIdA, objectStoreIdB); ret != 0 {
@@ -328,16 +379,22 @@ func (indexedDBComparer) Compare(a, b []byte) int {
 			}
 
 			if len(a) == 0 || len(b) == 0 {
-				panic("invalid key")
+				return compareInt(len(a), len(b))
 			}
 			return compareByte(a[0], b[0])
 		case 100:
+			if len(a) == 0 || len(b) == 0 {
+				return compareInt(len(a), len(b))
+			}
 			a, objectStoreIdA := decodeVarInt(a)
 			b, objectStoreIdB := decodeVarInt(b)
 			if ret := compareInt64(objectStoreIdA, objectStoreIdB); ret != 0 {
 				return ret
 			}
 
+			if len(a) == 0 || len(b) == 0 {
+				return compareInt(len(a), len(b))
+			}
 			a, indexIdA := decodeVarInt(a)
 			b, indexIdB := decodeVarInt(b)
 			if ret := compareInt64(indexIdA, indexIdB); ret != 0 {
@@ -345,62 +402,64 @@ func (indexedDBComparer) Compare(a, b []byte) int {
 			}
 
 			if len(a) == 0 || len(b) == 0 {
-				panic("invalid key")
+				return compareInt(len(a), len(b))
 			}
 			return compareByte(a[0], b[0])
 		case 150:
+			if len(a) == 0 || len(b) == 0 {
+				return compareInt(len(a), len(b))
+			}
 			_, objectStoreIdA := decodeVarInt(a)
 			_, objectStoreIdB := decodeVarInt(b)
 			return compareInt64(objectStoreIdA, objectStoreIdB)
 		case 151:
+			if len(a) == 0 || len(b) == 0 {
+				return compareInt(len(a), len(b))
+			}
 			a, objectStoreIdA := decodeVarInt(a)
 			b, objectStoreIdB := decodeVarInt(b)
 			if ret := compareInt64(objectStoreIdA, objectStoreIdB); ret != 0 {
 				return ret
 			}
 
+			if len(a) == 0 || len(b) == 0 {
+				return compareInt(len(a), len(b))
+			}
 			_, indexIdA := decodeVarInt(a)
 			_, indexIdB := decodeVarInt(b)
 			return compareInt64(indexIdA, indexIdB)
 		case 200:
+			if len(a) == 0 || len(b) == 0 {
+				return compareInt(len(a), len(b))
+			}
 			_, _, ret := compareStringWithLength(a, b)
 			return ret
 		case 201:
+			if len(a) == 0 || len(b) == 0 {
+				return compareInt(len(a), len(b))
+			}
 			a, objectStoreIdA := decodeVarInt(a)
 			b, objectStoreIdB := decodeVarInt(b)
 			if ret := compareInt64(objectStoreIdA, objectStoreIdB); ret != 0 {
 				return ret
 			}
 
+			if len(a) == 0 || len(b) == 0 {
+				return compareInt(len(a), len(b))
+			}
 			_, _, ret := compareStringWithLength(a, b)
 			return ret
 		}
 	case objectStoreData:
-		if len(a) == 0 || len(b) == 0 {
-			return compareInt(len(a), len(b))
-		}
-
 		_, _, ret := compareEncodedIDBKeys(a, b)
 		return ret
 	case existsEntry:
-		if len(a) == 0 || len(b) == 0 {
-			return compareInt(len(a), len(b))
-		}
-
 		_, _, ret := compareEncodedIDBKeys(a, b)
 		return ret
 	case blobEntry:
-		if len(a) == 0 || len(b) == 0 {
-			return compareInt(len(a), len(b))
-		}
-
 		_, _, ret := compareEncodedIDBKeys(a, b)
 		return ret
 	case indexData:
-		if len(a) == 0 || len(b) == 0 {
-			return compareInt(len(a), len(b))
-		}
-
 		a, b, ret := compareEncodedIDBKeys(a, b)
 		if ret != 0 {
 			return ret
@@ -418,7 +477,6 @@ func (indexedDBComparer) Compare(a, b []byte) int {
 		if len(a) == 0 || len(b) == 0 {
 			return compareInt(len(a), len(b))
 		}
-
 		_, _, ret = compareEncodedIDBKeys(a, b)
 		if ret != 0 {
 			return ret
