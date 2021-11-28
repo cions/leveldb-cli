@@ -27,11 +27,12 @@ func Main(args []string) error {
 				Aliases: []string{"d"},
 				EnvVars: []string{"DBPATH"},
 				Value:   ".",
+				Usage:   "path to the database `dir`ectory",
 			},
 			&cli.BoolFlag{
 				Name:    "indexeddb",
 				Aliases: []string{"i"},
-				Usage:   "Open Chromium's IndexedDB database",
+				Usage:   "open Chromium's IndexedDB database",
 			},
 		},
 		UseShortOptionHandling: true,
@@ -141,7 +142,7 @@ func Main(args []string) error {
 					},
 					&cli.StringFlag{
 						Name:  "start-base64",
-						Usage: "start of the `key` range (base64, inclusive)",
+						Usage: "start of the `key` range (in base64, inclusive)",
 					},
 					&cli.StringFlag{
 						Name:    "end",
@@ -155,7 +156,7 @@ func Main(args []string) error {
 					},
 					&cli.StringFlag{
 						Name:  "end-base64",
-						Usage: "end of the `key` range (base64, exclusive)",
+						Usage: "end of the `key` range (in base64, exclusive)",
 					},
 					&cli.StringFlag{
 						Name:    "prefix",
@@ -169,7 +170,7 @@ func Main(args []string) error {
 					},
 					&cli.StringFlag{
 						Name:  "prefix-base64",
-						Usage: "limit the key range to a range that satisfy the given `prefix` (base64)",
+						Usage: "limit the key range to a range that satisfy the given `prefix` (in base64)",
 					},
 				},
 				Action: keysCmd,
@@ -212,7 +213,7 @@ func Main(args []string) error {
 					},
 					&cli.StringFlag{
 						Name:  "start-base64",
-						Usage: "start of the `key` range (base64, inclusive)",
+						Usage: "start of the `key` range (in base64, inclusive)",
 					},
 					&cli.StringFlag{
 						Name:    "end",
@@ -226,7 +227,7 @@ func Main(args []string) error {
 					},
 					&cli.StringFlag{
 						Name:  "end-base64",
-						Usage: "end of the `key` range (base64, exclusive)",
+						Usage: "end of the `key` range (in base64, exclusive)",
 					},
 					&cli.StringFlag{
 						Name:    "prefix",
@@ -240,7 +241,7 @@ func Main(args []string) error {
 					},
 					&cli.StringFlag{
 						Name:  "prefix-base64",
-						Usage: "limit the key range to a range that satisfy the given `prefix` (base64)",
+						Usage: "limit the key range to a range that satisfy the given `prefix` (in base64)",
 					},
 				},
 				UseShortOptionHandling: true,
