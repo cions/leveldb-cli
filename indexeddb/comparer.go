@@ -242,14 +242,13 @@ func compareEncodedIDBKeys(a, b []byte) ([]byte, []byte, int) {
 	typeByte := a[0]
 	a, b = a[1:], b[1:]
 
-	if len(a) == 0 || len(b) == 0 {
-		return a, b, compareInt(len(a), len(b))
-	}
-
 	switch typeByte {
 	case indexedDBKeyNullTypeByte, indexedDBKeyMinKeyTypeByte:
 		return a, b, 0
 	case indexedDBKeyArrayTypeByte:
+		if len(a) == 0 || len(b) == 0 {
+			return a, b, compareInt(len(a), len(b))
+		}
 		var ret int
 		a, len1 := decodeVarInt(a)
 		b, len2 := decodeVarInt(b)
@@ -264,10 +263,19 @@ func compareEncodedIDBKeys(a, b []byte) ([]byte, []byte, int) {
 		}
 		return a, b, compareInt64(len1, len2)
 	case indexedDBKeyBinaryTypeByte:
+		if len(a) == 0 || len(b) == 0 {
+			return a, b, compareInt(len(a), len(b))
+		}
 		return compareBinary(a, b)
 	case indexedDBKeyStringTypeByte:
+		if len(a) == 0 || len(b) == 0 {
+			return a, b, compareInt(len(a), len(b))
+		}
 		return compareStringWithLength(a, b)
 	case indexedDBKeyDateTypeByte, indexedDBKeyNumberTypeByte:
+		if len(a) == 0 || len(b) == 0 {
+			return a, b, compareInt(len(a), len(b))
+		}
 		return compareDouble(a, b)
 	default:
 		panic("invalid key")
