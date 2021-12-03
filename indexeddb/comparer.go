@@ -346,9 +346,9 @@ func compareKeyPrefix(a, b *keyPrefix) int {
 	return 0
 }
 
-type indexedDBComparer struct{}
+type idbCmp1 struct{}
 
-func (indexedDBComparer) Compare(a, b []byte) int {
+func (idbCmp1) Compare(a, b []byte) int {
 	defer func(a, b []byte) {
 		if err := recover(); err != nil {
 			fmt.Fprintln(os.Stderr, "leveldb: warning: idb_cmp1: invalid IndexedDB key found")
@@ -545,17 +545,17 @@ func (indexedDBComparer) Compare(a, b []byte) int {
 	}
 }
 
-func (indexedDBComparer) Name() string {
+func (idbCmp1) Name() string {
 	return "idb_cmp1"
 }
 
-func (indexedDBComparer) Separator(dst, a, b []byte) []byte {
+func (idbCmp1) Separator(dst, a, b []byte) []byte {
 	return nil
 }
 
-func (indexedDBComparer) Successor(dst, b []byte) []byte {
+func (idbCmp1) Successor(dst, b []byte) []byte {
 	return nil
 }
 
-// IndexedDBComparer implements the idb_cmp1 comparer used in Chromium IndexedDB implementation.
-var IndexedDBComparer comparer.Comparer = indexedDBComparer{}
+// Comparer implements the idb_cmp1 comparer used in Chromium's IndexedDB implementation.
+var Comparer comparer.Comparer = idbCmp1{}

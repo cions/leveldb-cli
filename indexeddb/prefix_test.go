@@ -145,7 +145,7 @@ func TestPrefix(t *testing.T) {
 		if !bytes.Equal(slice.Limit, limit) {
 			t.Errorf(`Limit("%s") expects "%s" but got "%x"`, tc.Prefix, tc.Limit, slice.Limit)
 		}
-		if slice.Limit != nil && IndexedDBComparer.Compare(slice.Start, slice.Limit) > 0 {
+		if slice.Limit != nil && Comparer.Compare(slice.Start, slice.Limit) > 0 {
 			t.Errorf(`Start("%s") is greater than Limit("%s")`, tc.Prefix, tc.Prefix)
 			t.Logf(`Start("%s") == "%x"`, tc.Prefix, slice.Start)
 			t.Logf(`Limit("%s") == "%x"`, tc.Prefix, slice.Limit)
@@ -182,15 +182,15 @@ func TestPrefix(t *testing.T) {
 			prefix := key[:i]
 			slice := Prefix(prefix)
 
-			if slice.Start != nil && IndexedDBComparer.Compare(slice.Start, key) > 0 {
+			if slice.Start != nil && Comparer.Compare(slice.Start, key) > 0 {
 				t.Errorf(`Start("%x") is greater than "%s"`, prefix, keyString)
 				t.Logf(`Start("%x") == "%x"`, prefix, slice.Start)
 			}
-			if slice.Limit != nil && IndexedDBComparer.Compare(slice.Limit, key) <= 0 {
+			if slice.Limit != nil && Comparer.Compare(slice.Limit, key) <= 0 {
 				t.Errorf(`Limit("%x") is less than or equals to "%s"`, prefix, keyString)
 				t.Logf(`Limit("%x") == "%x"`, prefix, slice.Limit)
 			}
-			if slice.Limit != nil && IndexedDBComparer.Compare(slice.Start, slice.Limit) > 0 {
+			if slice.Limit != nil && Comparer.Compare(slice.Start, slice.Limit) > 0 {
 				t.Errorf(`Start("%x") is greater than Limit("%x")`, prefix, prefix)
 				t.Logf(`Start("%x") == "%x"`, prefix, slice.Start)
 				t.Logf(`Limit("%x") == "%x"`, prefix, slice.Limit)

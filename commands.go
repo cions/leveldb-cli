@@ -1,7 +1,6 @@
 package leveldbcli
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -24,13 +23,18 @@ type entry struct {
 
 var leveldbFilenamePattern = regexp.MustCompile(`^(?:LOCK|LOG(?:\.old)?|CURRENT(?:\.bak|\.\d+)?|MANIFEST-\d+|\d+\.(?:ldb|log|sst|tmp))$`)
 
-func initCmd(c *cli.Context) error {
-	var cmp comparer.Comparer = comparer.DefaultComparer
+func getComparer(c *cli.Context) comparer.Comparer {
 	if c.Bool("indexeddb") {
-		cmp = indexeddb.IndexedDBComparer
+		return indexeddb.Comparer
 	}
+	return comparer.DefaultComparer
+}
 
-	opts := &opt.Options{Comparer: cmp, ErrorIfExist: true}
+func initCmd(c *cli.Context) error {
+	opts := &opt.Options{
+		Comparer:     getComparer(c),
+		ErrorIfExist: true,
+	}
 	db, err := leveldb.OpenFile(c.String("dbpath"), opts)
 	if err != nil {
 		return err
@@ -57,12 +61,11 @@ func getCmd(c *cli.Context) (err error) {
 		return err
 	}
 
-	var cmp comparer.Comparer = comparer.DefaultComparer
-	if c.Bool("indexeddb") {
-		cmp = indexeddb.IndexedDBComparer
+	opts := &opt.Options{
+		Comparer:       getComparer(c),
+		ErrorIfMissing: true,
+		ReadOnly:       true,
 	}
-
-	opts := &opt.Options{Comparer: cmp, ErrorIfMissing: true, ReadOnly: true}
 	db, err := leveldb.OpenFile(c.String("dbpath"), opts)
 	if err != nil {
 		return err
@@ -114,12 +117,10 @@ func putCmd(c *cli.Context) (err error) {
 		return err
 	}
 
-	var cmp comparer.Comparer = comparer.DefaultComparer
-	if c.Bool("indexeddb") {
-		cmp = indexeddb.IndexedDBComparer
+	opts := &opt.Options{
+		Comparer:       getComparer(c),
+		ErrorIfMissing: true,
 	}
-
-	opts := &opt.Options{Comparer: cmp, ErrorIfMissing: true}
 	db, err := leveldb.OpenFile(c.String("dbpath"), opts)
 	if err != nil {
 		return err
@@ -152,12 +153,10 @@ func deleteCmd(c *cli.Context) (err error) {
 		return err
 	}
 
-	var cmp comparer.Comparer = comparer.DefaultComparer
-	if c.Bool("indexeddb") {
-		cmp = indexeddb.IndexedDBComparer
+	opts := &opt.Options{
+		Comparer:       getComparer(c),
+		ErrorIfMissing: true,
 	}
-
-	opts := &opt.Options{Comparer: cmp, ErrorIfMissing: true}
 	db, err := leveldb.OpenFile(c.String("dbpath"), opts)
 	if err != nil {
 		return err
@@ -239,11 +238,8 @@ func getKeyRange(c *cli.Context) (*util.Range, error) {
 	}
 
 	if slice.Start != nil && slice.Limit != nil {
-		var cmp func([]byte, []byte) int = bytes.Compare
-		if c.Bool("indexeddb") {
-			cmp = indexeddb.IndexedDBComparer.Compare
-		}
-		if cmp(slice.Start, slice.Limit) > 0 {
+		cmp := getComparer(c)
+		if cmp.Compare(slice.Start, slice.Limit) > 0 {
 			slice.Limit = slice.Start
 		}
 	}
@@ -262,17 +258,16 @@ func keysCmd(c *cli.Context) error {
 		w = newPrettyPrinter(color.Output)
 	}
 
-	var cmp comparer.Comparer = comparer.DefaultComparer
-	if c.Bool("indexeddb") {
-		cmp = indexeddb.IndexedDBComparer
-	}
-
 	slice, err := getKeyRange(c)
 	if err != nil {
 		return err
 	}
 
-	opts := &opt.Options{Comparer: cmp, ErrorIfMissing: true, ReadOnly: true}
+	opts := &opt.Options{
+		Comparer:       getComparer(c),
+		ErrorIfMissing: true,
+		ReadOnly:       true,
+	}
 	db, err := leveldb.OpenFile(c.String("dbpath"), opts)
 	if err != nil {
 		return err
@@ -321,17 +316,16 @@ func showCmd(c *cli.Context) error {
 			SetParseJSON(!c.Bool("no-json"))
 	}
 
-	var cmp comparer.Comparer = comparer.DefaultComparer
-	if c.Bool("indexeddb") {
-		cmp = indexeddb.IndexedDBComparer
-	}
-
 	slice, err := getKeyRange(c)
 	if err != nil {
 		return err
 	}
 
-	opts := &opt.Options{Comparer: cmp, ErrorIfMissing: true, ReadOnly: true}
+	opts := &opt.Options{
+		Comparer:       getComparer(c),
+		ErrorIfMissing: true,
+		ReadOnly:       true,
+	}
 	db, err := leveldb.OpenFile(c.String("dbpath"), opts)
 	if err != nil {
 		return err
@@ -374,7 +368,11 @@ func showCmd(c *cli.Context) error {
 }
 
 func dumpDB(dbpath string, cmp comparer.Comparer, w io.Writer) error {
-	opts := &opt.Options{Comparer: cmp, ErrorIfMissing: true, ReadOnly: true}
+	opts := &opt.Options{
+		Comparer:       cmp,
+		ErrorIfMissing: true,
+		ReadOnly:       true,
+	}
 	db, err := leveldb.OpenFile(dbpath, opts)
 	if err != nil {
 		return err
@@ -446,7 +444,9 @@ func loadDB(dbpath string, cmp comparer.Comparer, r io.Reader) error {
 		entries[i].Value = value
 	}
 
-	opts := &opt.Options{Comparer: cmp}
+	opts := &opt.Options{
+		Comparer: cmp,
+	}
 	db, err := leveldb.OpenFile(dbpath, opts)
 	if err != nil {
 		return err
@@ -502,28 +502,17 @@ func destroyDB(dbpath string, dryRun bool) error {
 }
 
 func dumpCmd(c *cli.Context) error {
-	var cmp comparer.Comparer = comparer.DefaultComparer
-	if c.Bool("indexeddb") {
-		cmp = indexeddb.IndexedDBComparer
-	}
-	return dumpDB(c.String("dbpath"), cmp, os.Stdout)
+	return dumpDB(c.String("dbpath"), getComparer(c), os.Stdout)
 }
 
 func loadCmd(c *cli.Context) error {
-	var cmp comparer.Comparer = comparer.DefaultComparer
-	if c.Bool("indexeddb") {
-		cmp = indexeddb.IndexedDBComparer
-	}
-	return loadDB(c.String("dbpath"), cmp, os.Stdin)
+	return loadDB(c.String("dbpath"), getComparer(c), os.Stdin)
 }
 
 func compactCmd(c *cli.Context) error {
 	dbpath := c.String("dbpath")
+	cmp := getComparer(c)
 	bakfile := path.Join(dbpath, "leveldb.bak")
-	var cmp comparer.Comparer = comparer.DefaultComparer
-	if c.Bool("indexeddb") {
-		cmp = indexeddb.IndexedDBComparer
-	}
 
 	bak, err := os.OpenFile(bakfile, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
