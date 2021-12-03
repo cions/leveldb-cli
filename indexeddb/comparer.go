@@ -9,17 +9,63 @@ import (
 	"github.com/syndtr/goleveldb/leveldb/comparer"
 )
 
-// Reference: https://source.chromium.org/chromium/chromium/src/+/main:content/browser/indexed_db/indexed_db_leveldb_coding.cc
-//            https://chromium.googlesource.com/chromium/src/+/main/content/browser/indexed_db/docs/leveldb_coding_scheme.md
+// References:
+//   https://source.chromium.org/chromium/chromium/src/+/main:content/browser/indexed_db/indexed_db_leveldb_coding.cc
+//   https://chromium.googlesource.com/chromium/src/+/main/content/browser/indexed_db/docs/leveldb_coding_scheme.md
 
 const (
-	globalMetadata = iota
-	databaseMetadata
-	objectStoreData
-	existsEntry
-	indexData
-	invalidType
-	blobEntry
+	globalMetadata   = 0
+	databaseMetadata = 1
+	objectStoreData  = 2
+	existsEntry      = 3
+	indexData        = 4
+	invalidType      = 5
+	blobEntry        = 6
+)
+
+const (
+	objectStoreDataIndexId = 1
+	existsEntryIndexId     = 2
+	blobEntryIndexId       = 3
+	minimumIndexId         = 30
+)
+
+const (
+	maxSimpleGlobalMetaDataTypeByte = 7
+	scopesPrefixByte                = 50
+	databaseFreeListTypeByte        = 100
+	databaseNameTypeByte            = 201
+)
+
+const (
+	maxSimpleDatabaseMetaDataTypeByte = 6
+	objectStoreMetaDataTypeByte       = 50
+	indexMetaDataTypeByte             = 100
+	objectStoreFreeListTypeByte       = 150
+	indexFreeListTypeByte             = 151
+	objectStoreNamesTypeByte          = 200
+	indexNamesKeyTypeByte             = 201
+)
+
+const (
+	indexedDBKeyNullTypeByte   = 0
+	indexedDBKeyStringTypeByte = 1
+	indexedDBKeyDateTypeByte   = 2
+	indexedDBKeyNumberTypeByte = 3
+	indexedDBKeyArrayTypeByte  = 4
+	indexedDBKeyMinKeyTypeByte = 5
+	indexedDBKeyBinaryTypeByte = 6
+)
+
+const (
+	indexedDBInvalidKeyType = 0
+	indexedDBArrayKeyType   = 1
+	indexedDBBinaryKeyType  = 2
+	indexedDBStringKeyType  = 3
+	indexedDBDateKeyType    = 4
+	indexedDBNumberKeyType  = 5
+	indexedDBNoneKeyType    = 6
+	indexedDBMinKeyType     = 7
 )
 
 func decodeInt(slice []byte) int64 {
@@ -165,22 +211,23 @@ func compareDouble(a, b []byte) ([]byte, []byte, int) {
 
 func keyTypeByteToKeyType(b byte) int {
 	switch b {
-	case 0:
-		return 0
-	case 4:
-		return 1
-	case 6:
-		return 2
-	case 1:
-		return 3
-	case 2:
-		return 4
-	case 3:
-		return 5
-	case 5:
-		return 7
+	case indexedDBKeyNullTypeByte:
+		return indexedDBInvalidKeyType
+	case indexedDBKeyArrayTypeByte:
+		return indexedDBArrayKeyType
+	case indexedDBKeyBinaryTypeByte:
+		return indexedDBBinaryKeyType
+	case indexedDBKeyStringTypeByte:
+		return indexedDBStringKeyType
+	case indexedDBKeyDateTypeByte:
+		return indexedDBDateKeyType
+	case indexedDBKeyNumberTypeByte:
+		return indexedDBNumberKeyType
+	case indexedDBKeyMinKeyTypeByte:
+		return indexedDBMinKeyType
+	default:
+		return indexedDBInvalidKeyType
 	}
-	return 0
 }
 
 func compareEncodedIDBKeys(a, b []byte) ([]byte, []byte, int) {
@@ -200,9 +247,9 @@ func compareEncodedIDBKeys(a, b []byte) ([]byte, []byte, int) {
 	}
 
 	switch typeByte {
-	case 0, 5:
+	case indexedDBKeyNullTypeByte, indexedDBKeyMinKeyTypeByte:
 		return a, b, 0
-	case 4:
+	case indexedDBKeyArrayTypeByte:
 		var ret int
 		a, len1 := decodeVarInt(a)
 		b, len2 := decodeVarInt(b)
@@ -216,14 +263,15 @@ func compareEncodedIDBKeys(a, b []byte) ([]byte, []byte, int) {
 			}
 		}
 		return a, b, compareInt64(len1, len2)
-	case 6:
+	case indexedDBKeyBinaryTypeByte:
 		return compareBinary(a, b)
-	case 1:
+	case indexedDBKeyStringTypeByte:
 		return compareStringWithLength(a, b)
-	case 2, 3:
+	case indexedDBKeyDateTypeByte, indexedDBKeyNumberTypeByte:
 		return compareDouble(a, b)
+	default:
+		panic("invalid key")
 	}
-	panic("invalid key")
 }
 
 type keyPrefix struct {
@@ -231,25 +279,22 @@ type keyPrefix struct {
 }
 
 func (prefix *keyPrefix) Type() int {
-	if prefix.DatabaseId == 0 {
+	switch {
+	case prefix.DatabaseId == 0:
 		return globalMetadata
-	}
-	if prefix.ObjectStoreId == 0 {
+	case prefix.ObjectStoreId == 0:
 		return databaseMetadata
-	}
-	if prefix.IndexId == 1 {
+	case prefix.IndexId == objectStoreDataIndexId:
 		return objectStoreData
-	}
-	if prefix.IndexId == 2 {
+	case prefix.IndexId == existsEntryIndexId:
 		return existsEntry
-	}
-	if prefix.IndexId == 3 {
+	case prefix.IndexId == blobEntryIndexId:
 		return blobEntry
-	}
-	if prefix.IndexId >= 30 {
+	case prefix.IndexId >= minimumIndexId:
 		return indexData
+	default:
+		return invalidType
 	}
-	return invalidType
 }
 
 func decodeKeyPrefix(b []byte) ([]byte, *keyPrefix) {
@@ -323,21 +368,21 @@ func (indexedDBComparer) Compare(a, b []byte) int {
 		typeByte := a[0]
 		a, b = a[1:], b[1:]
 
-		if typeByte < 7 {
+		if typeByte < maxSimpleGlobalMetaDataTypeByte {
 			return 0
 		}
 
 		switch typeByte {
-		case 50:
+		case scopesPrefixByte:
 			return bytes.Compare(a, b)
-		case 100:
+		case databaseFreeListTypeByte:
 			if len(a) == 0 || len(b) == 0 {
 				return compareInt(len(a), len(b))
 			}
 			_, databaseIdA := decodeVarInt(a)
 			_, databaseIdB := decodeVarInt(b)
 			return compareInt64(databaseIdA, databaseIdB)
-		case 201:
+		case databaseNameTypeByte:
 			if len(a) == 0 || len(b) == 0 {
 				return compareInt(len(a), len(b))
 			}
@@ -351,6 +396,8 @@ func (indexedDBComparer) Compare(a, b []byte) int {
 			}
 			_, _, ret = compareStringWithLength(a, b)
 			return ret
+		default:
+			panic("invalid key")
 		}
 	case databaseMetadata:
 		if len(a) == 0 || len(b) == 0 {
@@ -363,12 +410,12 @@ func (indexedDBComparer) Compare(a, b []byte) int {
 		typeByte := a[0]
 		a, b = a[1:], b[1:]
 
-		if typeByte < 6 {
+		if typeByte < maxSimpleDatabaseMetaDataTypeByte {
 			return 0
 		}
 
 		switch typeByte {
-		case 50:
+		case objectStoreMetaDataTypeByte:
 			if len(a) == 0 || len(b) == 0 {
 				return compareInt(len(a), len(b))
 			}
@@ -382,7 +429,7 @@ func (indexedDBComparer) Compare(a, b []byte) int {
 				return compareInt(len(a), len(b))
 			}
 			return compareByte(a[0], b[0])
-		case 100:
+		case indexMetaDataTypeByte:
 			if len(a) == 0 || len(b) == 0 {
 				return compareInt(len(a), len(b))
 			}
@@ -405,14 +452,14 @@ func (indexedDBComparer) Compare(a, b []byte) int {
 				return compareInt(len(a), len(b))
 			}
 			return compareByte(a[0], b[0])
-		case 150:
+		case objectStoreFreeListTypeByte:
 			if len(a) == 0 || len(b) == 0 {
 				return compareInt(len(a), len(b))
 			}
 			_, objectStoreIdA := decodeVarInt(a)
 			_, objectStoreIdB := decodeVarInt(b)
 			return compareInt64(objectStoreIdA, objectStoreIdB)
-		case 151:
+		case indexFreeListTypeByte:
 			if len(a) == 0 || len(b) == 0 {
 				return compareInt(len(a), len(b))
 			}
@@ -428,13 +475,13 @@ func (indexedDBComparer) Compare(a, b []byte) int {
 			_, indexIdA := decodeVarInt(a)
 			_, indexIdB := decodeVarInt(b)
 			return compareInt64(indexIdA, indexIdB)
-		case 200:
+		case objectStoreNamesTypeByte:
 			if len(a) == 0 || len(b) == 0 {
 				return compareInt(len(a), len(b))
 			}
 			_, _, ret := compareStringWithLength(a, b)
 			return ret
-		case 201:
+		case indexNamesKeyTypeByte:
 			if len(a) == 0 || len(b) == 0 {
 				return compareInt(len(a), len(b))
 			}
@@ -449,6 +496,8 @@ func (indexedDBComparer) Compare(a, b []byte) int {
 			}
 			_, _, ret := compareStringWithLength(a, b)
 			return ret
+		default:
+			panic("invalid key")
 		}
 	case objectStoreData:
 		_, _, ret := compareEncodedIDBKeys(a, b)
@@ -483,8 +532,9 @@ func (indexedDBComparer) Compare(a, b []byte) int {
 		}
 
 		return compareInt64(sequenceNumberA, sequenceNumberB)
+	default:
+		panic("invalid key")
 	}
-	panic("invalid key")
 }
 
 func (indexedDBComparer) Name() string {

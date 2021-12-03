@@ -154,16 +154,16 @@ func prefixEncodedIDBKeys(prefix []byte, nexts ...prefixComponent) ([]byte, []by
 	prefix = prefix[1:]
 
 	switch typeByte {
-	case 0:
-		start = []byte{0}
-		limit = []byte{4}
+	case indexedDBKeyNullTypeByte:
+		start = []byte{indexedDBKeyNullTypeByte}
+		limit = []byte{indexedDBKeyArrayTypeByte}
 
 		if len(prefix) > 0 && len(nexts) > 0 {
 			startTail, limitTail = nexts[0](prefix, nexts[1:]...)
 		}
-	case 4:
-		start = []byte{4}
-		limit = []byte{6}
+	case indexedDBKeyArrayTypeByte:
+		start = []byte{indexedDBKeyArrayTypeByte}
+		limit = []byte{indexedDBKeyBinaryTypeByte}
 
 		if len(prefix) == 0 {
 			break
@@ -181,23 +181,23 @@ func prefixEncodedIDBKeys(prefix []byte, nexts ...prefixComponent) ([]byte, []by
 		nexts = append(elements, nexts...)
 
 		startTail, limitTail = prefixVarInt(prefix, nexts...)
-	case 6:
-		start = []byte{6}
-		limit = []byte{1}
+	case indexedDBKeyBinaryTypeByte:
+		start = []byte{indexedDBKeyBinaryTypeByte}
+		limit = []byte{indexedDBKeyStringTypeByte}
 
 		if len(prefix) > 0 {
 			startTail, limitTail = prefixBinary(prefix, nexts...)
 		}
-	case 1:
-		start = []byte{1}
-		limit = []byte{2}
+	case indexedDBKeyStringTypeByte:
+		start = []byte{indexedDBKeyStringTypeByte}
+		limit = []byte{indexedDBKeyDateTypeByte}
 
 		if len(prefix) > 0 {
 			startTail, limitTail = prefixStringWithLength(prefix, nexts...)
 		}
-	case 2:
-		start = []byte{2}
-		limit = []byte{3}
+	case indexedDBKeyDateTypeByte:
+		start = []byte{indexedDBKeyDateTypeByte}
+		limit = []byte{indexedDBKeyNumberTypeByte}
 
 		if len(prefix) < 8 {
 			break
@@ -208,9 +208,9 @@ func prefixEncodedIDBKeys(prefix []byte, nexts ...prefixComponent) ([]byte, []by
 		if len(prefix) > 0 && len(nexts) > 0 {
 			startTail, limitTail = nexts[0](prefix, nexts[1:]...)
 		}
-	case 3:
-		start = []byte{3}
-		limit = []byte{5}
+	case indexedDBKeyNumberTypeByte:
+		start = []byte{indexedDBKeyNumberTypeByte}
+		limit = []byte{indexedDBKeyMinKeyTypeByte}
 
 		if len(prefix) < 8 {
 			break
@@ -221,8 +221,8 @@ func prefixEncodedIDBKeys(prefix []byte, nexts ...prefixComponent) ([]byte, []by
 		if len(prefix) > 0 && len(nexts) > 0 {
 			startTail, limitTail = nexts[0](prefix, nexts[1:]...)
 		}
-	case 5:
-		start = []byte{5}
+	case indexedDBKeyMinKeyTypeByte:
+		start = []byte{indexedDBKeyMinKeyTypeByte}
 		limit = nil
 
 		if len(prefix) > 0 && len(nexts) > 0 {
@@ -242,28 +242,28 @@ func prefixKeyRest(prefix []byte, k *keyPrefix) ([]byte, []byte) {
 	switch k.Type() {
 	case globalMetadata:
 		switch prefix[0] {
-		case 50:
+		case scopesPrefixByte:
 			return prefix, succBytes(prefix)
-		case 100:
+		case databaseFreeListTypeByte:
 			return prefixByte(prefix, prefixVarInt)
-		case 201:
+		case databaseNameTypeByte:
 			return prefixByte(prefix, prefixStringWithLength, prefixStringWithLength)
 		default:
 			return prefixByte(prefix)
 		}
 	case databaseMetadata:
 		switch prefix[0] {
-		case 50:
+		case objectStoreMetaDataTypeByte:
 			return prefixByte(prefix, prefixVarInt, prefixByte)
-		case 100:
+		case indexMetaDataTypeByte:
 			return prefixByte(prefix, prefixVarInt, prefixVarInt, prefixByte)
-		case 150:
+		case objectStoreFreeListTypeByte:
 			return prefixByte(prefix, prefixVarInt)
-		case 151:
+		case indexFreeListTypeByte:
 			return prefixByte(prefix, prefixVarInt, prefixVarInt)
-		case 200:
+		case objectStoreNamesTypeByte:
 			return prefixByte(prefix, prefixStringWithLength)
-		case 201:
+		case indexNamesKeyTypeByte:
 			return prefixByte(prefix, prefixVarInt, prefixStringWithLength)
 		default:
 			return prefixByte(prefix)
@@ -276,8 +276,9 @@ func prefixKeyRest(prefix []byte, k *keyPrefix) ([]byte, []byte) {
 		return prefixEncodedIDBKeys(prefix)
 	case indexData:
 		return prefixEncodedIDBKeys(prefix)
+	default:
+		return nil, nil
 	}
-	return nil, nil
 }
 
 func encodeKeyPrefix(k *keyPrefix) []byte {
