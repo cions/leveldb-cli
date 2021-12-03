@@ -9,9 +9,6 @@ import (
 )
 
 func succBytes(b []byte) []byte {
-	if len(b) == 0 {
-		return nil
-	}
 	for i := len(b) - 1; i >= 0; i-- {
 		if b[i] < math.MaxUint8 {
 			return append(b[:i:i], b[i]+1)
@@ -32,10 +29,10 @@ func prefixByte(prefix []byte, nexts ...prefixComponent) ([]byte, []byte) {
 	if len(limitTail) > 0 {
 		return append(start, startTail...), append(start, limitTail...)
 	}
-	if prefix[0] == math.MaxUint8 {
-		return append(start, startTail...), nil
+	if prefix[0] < math.MaxUint8 {
+		return append(start, startTail...), []byte{prefix[0] + 1}
 	}
-	return append(start, startTail...), []byte{prefix[0] + 1}
+	return append(start, startTail...), nil
 }
 
 func validVarInt(prefix []byte) bool {
@@ -45,6 +42,12 @@ func validVarInt(prefix []byte) bool {
 		}
 	}
 	return false
+}
+
+func encodeVarInt(v uint64) []byte {
+	buf := make([]byte, binary.MaxVarintLen64)
+	n := binary.PutUvarint(buf, v)
+	return buf[:n:n]
 }
 
 func prefixVarInt(prefix []byte, nexts ...prefixComponent) ([]byte, []byte) {
@@ -75,18 +78,14 @@ func prefixVarInt(prefix []byte, nexts ...prefixComponent) ([]byte, []byte) {
 		startTail, limitTail = nexts[0](prefix[i:], nexts[1:]...)
 	}
 
-	start := make([]byte, binary.MaxVarintLen64)
-	n := binary.PutUvarint(start, min)
-	start = start[:n:n]
+	start := encodeVarInt(min)
 	if len(limitTail) > 0 {
 		return append(start, startTail...), append(start, limitTail...)
 	}
-	if max == math.MaxInt64 {
-		return append(start, startTail...), nil
+	if max < math.MaxInt64 {
+		return append(start, startTail...), encodeVarInt(max + 1)
 	}
-	limit := make([]byte, binary.MaxVarintLen64)
-	m := binary.PutUvarint(limit, max+1)
-	return append(start, startTail...), limit[:m]
+	return append(start, startTail...), nil
 }
 
 func prefixBinary(prefix []byte, nexts ...prefixComponent) ([]byte, []byte) {
@@ -106,15 +105,12 @@ func prefixBinary(prefix []byte, nexts ...prefixComponent) ([]byte, []byte) {
 	}
 
 	if len(limitTail) > 0 {
-		start := append(startLength, body...)
-		start = start[:len(start):len(start)]
-		return append(start, startTail...), append(start, limitTail...)
+		return append(append(startLength, body...), startTail...), append(append(startLength, body...), limitTail...)
 	}
-	limitBody := succBytes(body)
-	if limitBody == nil {
-		return append(append(startLength, body...), startTail...), limitLength
+	if limitBody := succBytes(body); limitBody != nil {
+		return append(append(startLength, body...), startTail...), append(startLength, limitBody...)
 	}
-	return append(append(startLength, body...), startTail...), append(append([]byte{}, startLength...), limitBody...)
+	return append(append(startLength, body...), startTail...), limitLength
 }
 
 func prefixStringWithLength(prefix []byte, nexts ...prefixComponent) ([]byte, []byte) {
@@ -135,15 +131,28 @@ func prefixStringWithLength(prefix []byte, nexts ...prefixComponent) ([]byte, []
 	}
 
 	if len(limitTail) > 0 {
-		start := append(startLength, body...)
-		start = start[:len(start):len(start)]
-		return append(start, startTail...), append(start, limitTail...)
+		return append(append(startLength, body...), startTail...), append(append(startLength, body...), limitTail...)
 	}
-	limitBody := succBytes(body)
-	if limitBody == nil {
-		return append(append(startLength, body...), startTail...), limitLength
+	if limitBody := succBytes(body); limitBody != nil {
+		return append(append(startLength, body...), startTail...), append(startLength, limitBody...)
 	}
-	return append(append(startLength, body...), startTail...), append(append([]byte{}, startLength...), limitBody...)
+	return append(append(startLength, body...), startTail...), limitLength
+}
+
+func prefixDouble(prefix []byte, nexts ...prefixComponent) ([]byte, []byte) {
+	if len(prefix) < 8 {
+		return nil, nil
+	}
+
+	var startTail, limitTail []byte
+	if len(prefix) > 8 && len(nexts) > 0 {
+		startTail, limitTail = nexts[0](prefix[8:], nexts[1:]...)
+	}
+
+	if len(limitTail) > 0 {
+		return append(prefix[:8:8], startTail...), append(prefix[:8:8], limitTail...)
+	}
+	return append(prefix[:8:8], startTail...), nil
 }
 
 func prefixEncodedIDBKeys(prefix []byte, nexts ...prefixComponent) ([]byte, []byte) {
@@ -199,28 +208,12 @@ func prefixEncodedIDBKeys(prefix []byte, nexts ...prefixComponent) ([]byte, []by
 		start = []byte{indexedDBKeyDateTypeByte}
 		limit = []byte{indexedDBKeyNumberTypeByte}
 
-		if len(prefix) < 8 {
-			break
-		}
-		start = append(start, prefix[:8]...)
-		prefix = prefix[8:]
-
-		if len(prefix) > 0 && len(nexts) > 0 {
-			startTail, limitTail = nexts[0](prefix, nexts[1:]...)
-		}
+		startTail, limitTail = prefixDouble(prefix, nexts...)
 	case indexedDBKeyNumberTypeByte:
 		start = []byte{indexedDBKeyNumberTypeByte}
 		limit = []byte{indexedDBKeyMinKeyTypeByte}
 
-		if len(prefix) < 8 {
-			break
-		}
-		start = append(start, prefix[:8]...)
-		prefix = prefix[8:]
-
-		if len(prefix) > 0 && len(nexts) > 0 {
-			startTail, limitTail = nexts[0](prefix, nexts[1:]...)
-		}
+		startTail, limitTail = prefixDouble(prefix, nexts...)
 	case indexedDBKeyMinKeyTypeByte:
 		start = []byte{indexedDBKeyMinKeyTypeByte}
 		limit = nil
@@ -282,6 +275,10 @@ func prefixKeyRest(prefix []byte, k *keyPrefix) ([]byte, []byte) {
 }
 
 func encodeKeyPrefix(k *keyPrefix) []byte {
+	if k == nil {
+		return nil
+	}
+
 	databaseIdBytes := 1
 	if k.DatabaseId != 0 {
 		databaseIdBytes = (bits.Len64(uint64(k.DatabaseId)) + 7) / 8
@@ -310,7 +307,7 @@ func encodeKeyPrefix(k *keyPrefix) []byte {
 	return encoded
 }
 
-func succKeyPrefix(k *keyPrefix) (*keyPrefix, bool) {
+func succKeyPrefix(k *keyPrefix) *keyPrefix {
 	succ := &keyPrefix{
 		DatabaseId:    k.DatabaseId,
 		ObjectStoreId: k.ObjectStoreId,
@@ -319,21 +316,21 @@ func succKeyPrefix(k *keyPrefix) (*keyPrefix, bool) {
 
 	if succ.IndexId < math.MaxUint32 {
 		succ.IndexId += 1
-		return succ, false
+		return succ
 	}
 	succ.IndexId = 0
 
 	if succ.ObjectStoreId < math.MaxInt64 {
 		succ.ObjectStoreId += 1
-		return succ, false
+		return succ
 	}
 	succ.ObjectStoreId = 0
 
 	if succ.DatabaseId < math.MaxInt64 {
 		succ.DatabaseId += 1
-		return succ, false
+		return succ
 	}
-	return nil, true
+	return nil
 }
 
 func prefixKeyPrefix(prefix []byte) ([]byte, []byte) {
@@ -343,69 +340,65 @@ func prefixKeyPrefix(prefix []byte) ([]byte, []byte) {
 
 	if len(prefix) < 1+databaseIdBytes+objectStoreIdBytes+indexIdBytes {
 		prefix := prefix[1:]
-		start := &keyPrefix{}
-		last := &keyPrefix{
+		min := &keyPrefix{}
+		max := &keyPrefix{
 			DatabaseId:    math.MaxInt64,
 			ObjectStoreId: math.MaxInt64,
 			IndexId:       math.MaxUint32,
 		}
 
 		if len(prefix) >= databaseIdBytes {
-			start.DatabaseId = decodeInt(prefix[:databaseIdBytes])
-			last.DatabaseId = decodeInt(prefix[:databaseIdBytes])
+			min.DatabaseId = decodeInt(prefix[:databaseIdBytes])
+			max.DatabaseId = decodeInt(prefix[:databaseIdBytes])
 			prefix = prefix[databaseIdBytes:]
 		} else {
 			if databaseIdBytes > 1 {
-				start.DatabaseId = int64(1) << (8 * (databaseIdBytes - 1))
+				min.DatabaseId = int64(1) << (8 * (databaseIdBytes - 1))
 			}
 			if databaseIdBytes < 8 {
-				last.DatabaseId = (int64(1) << (8 * databaseIdBytes)) - 1
+				max.DatabaseId = (int64(1) << (8 * databaseIdBytes)) - 1
 			}
 			if len(prefix) > 0 {
 				v := decodeInt(prefix)
-				start.DatabaseId |= v
-				last.DatabaseId &^= (int64(1) << (8 * len(prefix))) - 1
-				last.DatabaseId |= v
+				min.DatabaseId |= v
+				max.DatabaseId &^= (int64(1) << (8 * len(prefix))) - 1
+				max.DatabaseId |= v
 				prefix = prefix[len(prefix):]
 			}
 		}
 
 		if len(prefix) >= objectStoreIdBytes {
-			start.ObjectStoreId = decodeInt(prefix[:objectStoreIdBytes])
-			last.ObjectStoreId = decodeInt(prefix[:objectStoreIdBytes])
+			min.ObjectStoreId = decodeInt(prefix[:objectStoreIdBytes])
+			max.ObjectStoreId = decodeInt(prefix[:objectStoreIdBytes])
 			prefix = prefix[objectStoreIdBytes:]
 		} else {
 			if objectStoreIdBytes > 1 {
-				start.ObjectStoreId = int64(1) << (8 * (objectStoreIdBytes - 1))
+				min.ObjectStoreId = int64(1) << (8 * (objectStoreIdBytes - 1))
 			}
 			if objectStoreIdBytes < 8 {
-				last.ObjectStoreId = (int64(1) << (8 * objectStoreIdBytes)) - 1
+				max.ObjectStoreId = (int64(1) << (8 * objectStoreIdBytes)) - 1
 			}
 			if len(prefix) > 0 {
 				v := decodeInt(prefix)
-				start.ObjectStoreId |= v
-				last.ObjectStoreId &^= (int64(1) << (8 * len(prefix))) - 1
-				last.ObjectStoreId |= v
+				min.ObjectStoreId |= v
+				max.ObjectStoreId &^= (int64(1) << (8 * len(prefix))) - 1
+				max.ObjectStoreId |= v
 				prefix = prefix[len(prefix):]
 			}
 		}
 
 		if indexIdBytes > 1 {
-			start.IndexId = int64(1) << (8 * (indexIdBytes - 1))
+			min.IndexId = int64(1) << (8 * (indexIdBytes - 1))
 		}
-		last.IndexId = (int64(1) << (8 * indexIdBytes)) - 1
+		max.IndexId = (int64(1) << (8 * indexIdBytes)) - 1
 		if len(prefix) > 0 {
 			v := decodeInt(prefix)
-			start.IndexId |= v
-			last.IndexId &^= (int64(1) << (8 * len(prefix))) - 1
-			last.IndexId |= v
+			min.IndexId |= v
+			max.IndexId &^= (int64(1) << (8 * len(prefix))) - 1
+			max.IndexId |= v
 		}
 
-		limit, max := succKeyPrefix(last)
-		if max {
-			return encodeKeyPrefix(start), nil
-		}
-		return encodeKeyPrefix(start), encodeKeyPrefix(limit)
+		return encodeKeyPrefix(min), encodeKeyPrefix(succKeyPrefix(max))
 	}
 
 	prefix, keyPrefix := decodeKeyPrefix(prefix)
@@ -419,11 +412,7 @@ func prefixKeyPrefix(prefix []byte) ([]byte, []byte) {
 	if len(limitTail) > 0 {
 		return append(start, startTail...), append(start, limitTail...)
 	}
-	limitKeyPrefix, max := succKeyPrefix(keyPrefix)
-	if max {
-		return append(start, startTail...), nil
-	}
-	return append(start, startTail...), encodeKeyPrefix(limitKeyPrefix)
+	return append(start, startTail...), encodeKeyPrefix(succKeyPrefix(keyPrefix))
 }
 
 // Prefix returns a key range that satisfy the given prefix for the idb_cmp1 comparer.
