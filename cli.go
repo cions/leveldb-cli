@@ -1,3 +1,6 @@
+// Copyright (c) 2021-2022 cions
+// Licensed under the MIT License. See LICENSE for details
+
 package leveldbcli
 
 import (
@@ -9,6 +12,7 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
+// Main runs the command
 func Main(args []string) error {
 	version := "(devel)"
 	if bi, ok := debug.ReadBuildInfo(); ok {
