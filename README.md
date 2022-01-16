@@ -33,6 +33,6 @@ $ leveldb destroy
 $ go install github.com/cions/leveldb-cli/cmd/leveldb@latest
 ```
 
-# License
+## License
 
 MIT
