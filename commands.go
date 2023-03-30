@@ -1,4 +1,4 @@
-// Copyright (c) 2021-2022 cions
+// Copyright (c) 2021-2023 cions
 // Licensed under the MIT License. See LICENSE for details
 
 package leveldbcli
