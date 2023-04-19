@@ -523,6 +523,7 @@ func compactCmd(c *cli.Context) error {
 	}
 	defer bak.Close()
 	if err := dumpDB(dbpath, cmp, bak); err != nil {
+		os.Remove(bakfile)
 		return err
 	}
 	if _, err := bak.Seek(0, io.SeekStart); err != nil {
