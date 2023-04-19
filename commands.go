@@ -51,7 +51,7 @@ func initCmd(c *cli.Context) error {
 
 func getCmd(c *cli.Context) (err error) {
 	if c.NArg() < 1 {
-		cli.ShowCommandHelpAndExit(c, "get", 2)
+		cli.ShowSubcommandHelpAndExit(c, 2)
 	}
 
 	key := []byte(c.Args().Get(0))
@@ -92,7 +92,7 @@ func getCmd(c *cli.Context) (err error) {
 
 func putCmd(c *cli.Context) (err error) {
 	if c.NArg() < 1 {
-		cli.ShowCommandHelpAndExit(c, "put", 2)
+		cli.ShowSubcommandHelpAndExit(c, 2)
 	}
 
 	key := []byte(c.Args().Get(0))
@@ -143,7 +143,7 @@ func putCmd(c *cli.Context) (err error) {
 
 func deleteCmd(c *cli.Context) (err error) {
 	if c.NArg() < 1 {
-		cli.ShowCommandHelpAndExit(c, "delete", 2)
+		cli.ShowSubcommandHelpAndExit(c, 2)
 	}
 
 	key := []byte(c.Args().Get(0))
