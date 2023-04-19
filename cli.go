@@ -47,12 +47,7 @@ func Main(args []string) error {
 			}
 			return nil
 		},
-		Action: func(c *cli.Context) error {
-			if c.NArg() == 0 {
-				return c.App.Command("show").Run(c)
-			}
-			return c.App.Command("help").Run(c)
-		},
+		DefaultCommand: "show",
 		Commands: []*cli.Command{
 			{
 				Name:      "init",
