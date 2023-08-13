@@ -1,36 +1,43 @@
 name: CI
 
-on:
-  push:
-  pull_request:
+on: [ push, pull_request ]
 
 permissions:
   contents: write
 
 jobs:
   test:
+    name: Test (${{ matrix.os }})
+
     runs-on: ${{ matrix.os }}
+
+    permissions:
+      contents: read
 
     strategy:
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
+        os:
+        - windows-latest
+        - macos-latest
+        - ubuntu-latest
 
     steps:
+    - name: Checkout
+      uses: actions/checkout@v3
     - name: Setup Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.20'
-    - name: Checkout
-      uses: actions/checkout@v3
-    - name: Test
-      shell: bash
-      env:
-        CGO_ENABLED: '0'
+        go-version: "1.20"
+    - name: Run go test
       run: go test -v ./...
 
   create-release:
+    name: Create GitHub Release
+
     runs-on: ubuntu-latest
-    needs: [test]
+
+    needs: [ test ]
+
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
 
     outputs:
@@ -46,11 +53,15 @@ jobs:
       run: |
         RELEASE_NAME="${GITHUB_REF#refs/tags/}"
         gh release create --draft "${RELEASE_NAME}"
-        echo "::set-output name=release-name::${RELEASE_NAME}"
+        echo "release-name=${RELEASE_NAME}" >> "${GITHUB_OUTPUT}"
 
-  upload-release:
+  upload-release-assets:
+    name: Upload release asset (${{ matrix.GOOS }}/${{ matrix.GOARCH }})
+
     runs-on: ubuntu-latest
-    needs: [create-release]
+
+    needs: [ create-release ]
+
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
 
     strategy:
@@ -67,19 +78,19 @@ jobs:
     - name: Setup Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.20'
+        go-version: "1.20"
     - id: build-release-asset
       name: Build release asset
       env:
-        CGO_ENABLED: '0'
+        CGO_ENABLED: "0"
         GOOS: ${{ matrix.GOOS }}
         GOARCH: ${{ matrix.GOARCH }}
       run: |
-        go install -trimpath -ldflags "-s -w" "github.com/${GITHUB_REPOSITORY}/cmd/leveldb@${GITHUB_REF#refs/tags/}"
+        go install -buildmode=pie -trimpath -ldflags "-s -w" "github.com/${GITHUB_REPOSITORY}/cmd/leveldb@${GITHUB_REF#refs/tags/}"
 
-        ASSET_DIR="leveldb-${GOOS}-${GOARCH}-${GITHUB_REF#refs/tags/v}"
-        mkdir "${ASSET_DIR}"
-        cp LICENSE README.md "${ASSET_DIR}"
+        ASSETDIR="leveldb-${GOOS}-${GOARCH}-${GITHUB_REF#refs/tags/v}"
+        mkdir "${ASSETDIR}"
+        cp LICENSE README.md "${ASSETDIR}"
 
         if [[ "${GOOS}/${GOARCH}" == "$(go env GOHOSTOS)/$(go env GOHOSTARCH)" ]]; then
           GOBIN="$(go env GOPATH)/bin"
@@ -87,15 +98,18 @@ jobs:
           GOBIN="$(go env GOPATH)/bin/${GOOS}_${GOARCH}"
         fi
         GOEXE="$(go env GOEXE)"
-        cp "${GOBIN}/leveldb${GOEXE}" "${ASSET_DIR}"
+        cp "${GOBIN}/leveldb${GOEXE}" "${ASSETDIR}"
 
-        if [[ "${GOOS}" == "windows" ]]; then
-          zip "${ASSET_DIR}.zip" "${ASSET_DIR}"/*
-          echo "::set-output name=asset-name::${ASSET_DIR}.zip"
-        else
-          tar zcf "${ASSET_DIR}.tar.gz" "${ASSET_DIR}"
-          echo "::set-output name=asset-name::${ASSET_DIR}.tar.gz"
-        fi
+        case "${GOOS}" in
+          windows)
+            zip "${ASSETDIR}.zip" "${ASSETDIR}"/*
+            echo "asset-name=${ASSETDIR}.zip" >> "${GITHUB_OUTPUT}"
+            ;;
+          *)
+            tar zcf "${ASSETDIR}.tar.gz" "${ASSETDIR}"
+            echo "asset-name=${ASSETDIR}.tar.gz" >> "${GITHUB_OUTPUT}"
+            ;;
+        esac
     - name: Upload release asset
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

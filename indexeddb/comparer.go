@@ -1,5 +1,5 @@
 // Copyright (c) 2021-2023 cions
-// Licensed under the MIT License. See LICENSE for details
+// Licensed under the MIT License. See LICENSE for details.
 
 package indexeddb
 
@@ -71,31 +71,23 @@ const (
 	indexedDBMinKeyType     = 7
 )
 
-func decodeInt(slice []byte) int64 {
-	if len(slice) == 0 {
+func decodeInt(a []byte) int64 {
+	if len(a) == 0 || len(a) > 8 {
 		panic("invalid key")
 	}
-
-	var v uint64 = 0
-	shift := 0
-	for _, b := range slice {
-		if shift >= 64 {
-			panic("invalid key")
-		}
-		v |= uint64(b) << shift
-		shift += 8
+	v := uint64(0)
+	for i, b := range a {
+		v |= uint64(b) << (8 * i)
 	}
 	return int64(v)
 }
 
-func decodeVarInt(slice []byte) ([]byte, int64) {
-	var v uint64 = 0
-	for shift := 0; len(slice) > 0 && shift < 64; shift += 7 {
-		b := slice[0]
-		slice = slice[1:]
-		v |= uint64(b&0x7f) << shift
-		if b&0x80 == 0 {
-			return slice, int64(v)
+func decodeVarInt(a []byte) ([]byte, int64) {
+	v := uint64(0)
+	for i := 0; i < len(a) && i < 9; i++ {
+		v |= uint64(a[i]&0x7f) << (7 * i)
+		if a[i]&0x80 == 0 {
+			return a[i+1:], int64(v)
 		}
 	}
 	panic("invalid key")
@@ -133,14 +125,7 @@ func compareInt64(a, b int64) int {
 
 func compareBinary(a, b []byte) ([]byte, []byte, int) {
 	a, len1 := decodeVarInt(a)
-	if len1 < 0 {
-		panic("invalid key")
-	}
-
 	b, len2 := decodeVarInt(b)
-	if len2 < 0 {
-		panic("invalid key")
-	}
 
 	if uint64(len(a)) < uint64(len1) || uint64(len(b)) < uint64(len2) {
 		minlen := uint64(len1)
@@ -165,15 +150,8 @@ func compareBinary(a, b []byte) ([]byte, []byte, int) {
 func compareStringWithLength(a, b []byte) ([]byte, []byte, int) {
 	a, v1 := decodeVarInt(a)
 	len1 := 2 * uint64(v1)
-	if v1 < 0 {
-		panic("invalid key")
-	}
-
 	b, v2 := decodeVarInt(b)
 	len2 := 2 * uint64(v2)
-	if v2 < 0 {
-		panic("invalid key")
-	}
 
 	if uint64(len(a)) < len1 || uint64(len(b)) < len2 {
 		minlen := len1
@@ -238,7 +216,8 @@ func compareEncodedIDBKeys(a, b []byte) ([]byte, []byte, int) {
 		return a, b, compareInt(len(a), len(b))
 	}
 
-	if ret := compareInt(keyTypeByteToKeyType(a[0]), keyTypeByteToKeyType(b[0])); ret != 0 {
+	ret := compareInt(keyTypeByteToKeyType(a[0]), keyTypeByteToKeyType(b[0]))
+	if ret != 0 {
 		return a[1:], b[1:], ret
 	}
 
@@ -252,7 +231,6 @@ func compareEncodedIDBKeys(a, b []byte) ([]byte, []byte, int) {
 		if len(a) == 0 || len(b) == 0 {
 			return a, b, compareInt(len(a), len(b))
 		}
-		var ret int
 		a, len1 := decodeVarInt(a)
 		b, len2 := decodeVarInt(b)
 		for i := int64(0); i < len1 && i < len2; i++ {
@@ -308,32 +286,32 @@ func (prefix *keyPrefix) Type() int {
 	}
 }
 
-func decodeKeyPrefix(b []byte) ([]byte, *keyPrefix) {
-	if len(b) == 0 {
+func decodeKeyPrefix(a []byte) ([]byte, *keyPrefix) {
+	if len(a) == 0 {
 		panic("invalid key")
 	}
 
-	firstByte := b[0]
-	b = b[1:]
+	firstByte := a[0]
+	a = a[1:]
 
 	databaseIdBytes := int((((firstByte >> 5) & 0x07) + 1))
 	objectStoreIdBytes := int(((firstByte >> 2) & 0x07) + 1)
 	indexIdBytes := int((firstByte & 0x03) + 1)
 
-	if len(b) < databaseIdBytes+objectStoreIdBytes+indexIdBytes {
+	if len(a) < databaseIdBytes+objectStoreIdBytes+indexIdBytes {
 		panic("invalid key")
 	}
 
-	databaseId := decodeInt(b[:databaseIdBytes])
-	b = b[databaseIdBytes:]
+	databaseId := decodeInt(a[:databaseIdBytes])
+	a = a[databaseIdBytes:]
 
-	objectStoreId := decodeInt(b[:objectStoreIdBytes])
-	b = b[objectStoreIdBytes:]
+	objectStoreId := decodeInt(a[:objectStoreIdBytes])
+	a = a[objectStoreIdBytes:]
 
-	indexId := decodeInt(b[:indexIdBytes])
-	b = b[indexIdBytes:]
+	indexId := decodeInt(a[:indexIdBytes])
+	a = a[indexIdBytes:]
 
-	return b, &keyPrefix{DatabaseId: databaseId, ObjectStoreId: objectStoreId, IndexId: indexId}
+	return a, &keyPrefix{databaseId, objectStoreId, indexId}
 }
 
 func compareKeyPrefix(a, b *keyPrefix) int {
@@ -525,8 +503,8 @@ func (idbCmp1) Compare(a, b []byte) int {
 			return ret
 		}
 
-		var sequenceNumberA int64 = -1
-		var sequenceNumberB int64 = -1
+		sequenceNumberA := int64(-1)
+		sequenceNumberB := int64(-1)
 		if len(a) > 0 {
 			a, sequenceNumberA = decodeVarInt(a)
 		}

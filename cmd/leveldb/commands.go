@@ -1,9 +1,10 @@
 // Copyright (c) 2021-2023 cions
-// Licensed under the MIT License. See LICENSE for details
+// Licensed under the MIT License. See LICENSE for details.
 
-package leveldbcli
+package main
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -20,11 +21,11 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 )
 
+var leveldbFilenamePattern = regexp.MustCompile(`^(?:LOCK|LOG(?:\.old)?|CURRENT(?:\.bak|\.\d+)?|MANIFEST-\d+|\d+\.(?:ldb|log|sst|tmp))$`)
+
 type entry struct {
 	Key, Value []byte
 }
-
-var leveldbFilenamePattern = regexp.MustCompile(`^(?:LOCK|LOG(?:\.old)?|CURRENT(?:\.bak|\.\d+)?|MANIFEST-\d+|\d+\.(?:ldb|log|sst|tmp))$`)
 
 func getComparer(c *cli.Context) comparer.Comparer {
 	if c.Bool("indexeddb") {
@@ -33,148 +34,15 @@ func getComparer(c *cli.Context) comparer.Comparer {
 	return comparer.DefaultComparer
 }
 
-func initCmd(c *cli.Context) error {
-	opts := &opt.Options{
-		Comparer:     getComparer(c),
-		ErrorIfExist: true,
-	}
-	db, err := leveldb.OpenFile(c.String("dbpath"), opts)
-	if err != nil {
-		return err
-	}
-	if err := db.Close(); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func getCmd(c *cli.Context) (err error) {
-	if c.NArg() < 1 {
-		cli.ShowSubcommandHelpAndExit(c, 2)
-	}
-
-	key := []byte(c.Args().Get(0))
+func getArg(c *cli.Context, n int) ([]byte, error) {
+	arg := []byte(c.Args().Get(n))
 	if c.Bool("base64") {
-		key, err = decodeBase64(key)
-	} else if !c.Bool("raw") {
-		key, err = unescape(key)
-	}
-	if err != nil {
-		return err
-	}
-
-	opts := &opt.Options{
-		Comparer:       getComparer(c),
-		ErrorIfMissing: true,
-		ReadOnly:       true,
-	}
-	db, err := leveldb.OpenFile(c.String("dbpath"), opts)
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-
-	value, err := db.Get(key, nil)
-	if err != nil {
-		return err
-	}
-	if _, err := os.Stdout.Write(value); err != nil {
-		return err
-	}
-
-	if err := db.Close(); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func putCmd(c *cli.Context) (err error) {
-	if c.NArg() < 1 {
-		cli.ShowSubcommandHelpAndExit(c, 2)
-	}
-
-	key := []byte(c.Args().Get(0))
-	if c.Bool("base64") {
-		key, err = decodeBase64(key)
-	} else if !c.Bool("raw") {
-		key, err = unescape(key)
-	}
-	if err != nil {
-		return err
-	}
-
-	var value []byte
-	if c.NArg() == 1 {
-		value, err = io.ReadAll(os.Stdin)
+		return decodeBase64(arg)
+	} else if c.Bool("raw") {
+		return arg, nil
 	} else {
-		value = []byte(c.Args().Get(1))
-		if c.Bool("base64") {
-			value, err = decodeBase64(value)
-		} else if !c.Bool("raw") {
-			value, err = unescape(value)
-		}
+		return unescape(arg)
 	}
-	if err != nil {
-		return err
-	}
-
-	opts := &opt.Options{
-		Comparer:       getComparer(c),
-		ErrorIfMissing: true,
-	}
-	db, err := leveldb.OpenFile(c.String("dbpath"), opts)
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-
-	if err := db.Put(key, value, nil); err != nil {
-		return err
-	}
-
-	if err := db.Close(); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func deleteCmd(c *cli.Context) (err error) {
-	if c.NArg() < 1 {
-		cli.ShowSubcommandHelpAndExit(c, 2)
-	}
-
-	key := []byte(c.Args().Get(0))
-	if c.Bool("base64") {
-		key, err = decodeBase64(key)
-	} else if !c.Bool("raw") {
-		key, err = unescape(key)
-	}
-	if err != nil {
-		return err
-	}
-
-	opts := &opt.Options{
-		Comparer:       getComparer(c),
-		ErrorIfMissing: true,
-	}
-	db, err := leveldb.OpenFile(c.String("dbpath"), opts)
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-
-	if err := db.Delete(key, nil); err != nil {
-		return err
-	}
-
-	if err := db.Close(); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func getKeyRange(c *cli.Context) (*util.Range, error) {
@@ -240,25 +108,136 @@ func getKeyRange(c *cli.Context) (*util.Range, error) {
 		slice.Limit = end
 	}
 
-	if slice.Start != nil && slice.Limit != nil {
-		cmp := getComparer(c)
-		if cmp.Compare(slice.Start, slice.Limit) > 0 {
-			slice.Limit = slice.Start
-		}
-	}
-
-	if slice.Start == nil && slice.Limit == nil {
-		return nil, nil
-	}
 	return slice, nil
 }
 
+func initCmd(c *cli.Context) error {
+	db, err := leveldb.OpenFile(c.String("dbpath"), &opt.Options{
+		Comparer:     getComparer(c),
+		ErrorIfExist: true,
+	})
+	if err != nil {
+		return err
+	}
+	if err := db.Close(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func getCmd(c *cli.Context) error {
+	if c.NArg() < 1 {
+		cli.ShowSubcommandHelpAndExit(c, 2)
+	}
+
+	key, err := getArg(c, 0)
+	if err != nil {
+		return err
+	}
+
+	db, err := leveldb.OpenFile(c.String("dbpath"), &opt.Options{
+		Comparer:       getComparer(c),
+		ErrorIfMissing: true,
+		ReadOnly:       true,
+	})
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	value, err := db.Get(key, nil)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stdout.Write(value); err != nil {
+		return err
+	}
+
+	if err := db.Close(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func putCmd(c *cli.Context) error {
+	if c.NArg() < 1 {
+		cli.ShowSubcommandHelpAndExit(c, 2)
+	}
+
+	key, err := getArg(c, 0)
+	if err != nil {
+		return err
+	}
+
+	var value []byte
+	if c.NArg() < 2 {
+		value, err = io.ReadAll(os.Stdin)
+	} else {
+		value, err = getArg(c, 1)
+	}
+	if err != nil {
+		return err
+	}
+
+	db, err := leveldb.OpenFile(c.String("dbpath"), &opt.Options{
+		Comparer:       getComparer(c),
+		ErrorIfMissing: true,
+	})
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	if err := db.Put(key, value, nil); err != nil {
+		return err
+	}
+
+	if err := db.Close(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func deleteCmd(c *cli.Context) error {
+	if c.NArg() < 1 {
+		cli.ShowSubcommandHelpAndExit(c, 2)
+	}
+
+	key, err := getArg(c, 0)
+	if err != nil {
+		return err
+	}
+
+	db, err := leveldb.OpenFile(c.String("dbpath"), &opt.Options{
+		Comparer:       getComparer(c),
+		ErrorIfMissing: true,
+	})
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	if err := db.Delete(key, nil); err != nil {
+		return err
+	}
+
+	if err := db.Close(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func keysCmd(c *cli.Context) error {
-	var w io.Writer = os.Stdout
+	var w io.Writer
 	if c.Bool("base64") {
 		w = newBase64Writer(os.Stdout)
-	} else if !c.Bool("raw") {
-		w = newPrettyPrinter(color.Output)
+	} else if c.Bool("raw") {
+		w = os.Stdout
+	} else {
+		w = newPrettyPrinter(os.Stdout)
 	}
 
 	slice, err := getKeyRange(c)
@@ -266,12 +245,11 @@ func keysCmd(c *cli.Context) error {
 		return err
 	}
 
-	opts := &opt.Options{
+	db, err := leveldb.OpenFile(c.String("dbpath"), &opt.Options{
 		Comparer:       getComparer(c),
 		ErrorIfMissing: true,
 		ReadOnly:       true,
-	}
-	db, err := leveldb.OpenFile(c.String("dbpath"), opts)
+	})
 	if err != nil {
 		return err
 	}
@@ -307,11 +285,14 @@ func keysCmd(c *cli.Context) error {
 }
 
 func showCmd(c *cli.Context) error {
-	var kw, vw io.Writer = os.Stdout, os.Stdout
+	var kw, vw io.Writer
 	if c.Bool("base64") {
 		kw = newBase64Writer(os.Stdout)
 		vw = newBase64Writer(os.Stdout)
-	} else if !c.Bool("raw") {
+	} else if c.Bool("raw") {
+		kw = os.Stdout
+		vw = os.Stdout
+	} else {
 		kw = newPrettyPrinter(color.Output).SetQuoting(true)
 		vw = newPrettyPrinter(color.Output).
 			SetQuoting(true).
@@ -324,12 +305,11 @@ func showCmd(c *cli.Context) error {
 		return err
 	}
 
-	opts := &opt.Options{
+	db, err := leveldb.OpenFile(c.String("dbpath"), &opt.Options{
 		Comparer:       getComparer(c),
 		ErrorIfMissing: true,
 		ReadOnly:       true,
-	}
-	db, err := leveldb.OpenFile(c.String("dbpath"), opts)
+	})
 	if err != nil {
 		return err
 	}
@@ -371,12 +351,11 @@ func showCmd(c *cli.Context) error {
 }
 
 func dumpDB(dbpath string, cmp comparer.Comparer, w io.Writer) error {
-	opts := &opt.Options{
+	db, err := leveldb.OpenFile(dbpath, &opt.Options{
 		Comparer:       cmp,
 		ErrorIfMissing: true,
 		ReadOnly:       true,
-	}
-	db, err := leveldb.OpenFile(dbpath, opts)
+	})
 	if err != nil {
 		return err
 	}
@@ -389,16 +368,22 @@ func dumpDB(dbpath string, cmp comparer.Comparer, w io.Writer) error {
 	defer s.Release()
 
 	var entries []entry
+
 	iter := s.NewIterator(nil, nil)
 	defer iter.Release()
 	for iter.Next() {
-		key := make([]byte, len(iter.Key()))
-		copy(key, iter.Key())
-		value := make([]byte, len(iter.Value()))
-		copy(value, iter.Value())
-		entries = append(entries, entry{Key: key, Value: value})
+		entries = append(entries, entry{
+			Key:   bytes.Clone(iter.Key()),
+			Value: bytes.Clone(iter.Value()),
+		})
 	}
 	if err := iter.Error(); err != nil {
+		return err
+	}
+
+	iter.Release()
+	s.Release()
+	if err := db.Close(); err != nil {
 		return err
 	}
 
@@ -414,12 +399,6 @@ func dumpDB(dbpath string, cmp comparer.Comparer, w io.Writer) error {
 		if err := enc.EncodeBytes(entry.Value); err != nil {
 			return err
 		}
-	}
-
-	iter.Release()
-	s.Release()
-	if err := db.Close(); err != nil {
-		return err
 	}
 
 	return nil
@@ -447,10 +426,9 @@ func loadDB(dbpath string, cmp comparer.Comparer, r io.Reader) error {
 		entries[i].Value = value
 	}
 
-	opts := &opt.Options{
+	db, err := leveldb.OpenFile(dbpath, &opt.Options{
 		Comparer: cmp,
-	}
-	db, err := leveldb.OpenFile(dbpath, opts)
+	})
 	if err != nil {
 		return err
 	}
@@ -522,7 +500,9 @@ func compactCmd(c *cli.Context) error {
 		return err
 	}
 	defer bak.Close()
+
 	if err := dumpDB(dbpath, cmp, bak); err != nil {
+		bak.Close()
 		os.Remove(bakfile)
 		return err
 	}

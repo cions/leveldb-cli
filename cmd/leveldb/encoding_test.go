@@ -1,7 +1,7 @@
 // Copyright (c) 2021-2023 cions
-// Licensed under the MIT License. See LICENSE for details
+// Licensed under the MIT License. See LICENSE for details.
 
-package leveldbcli
+package main
 
 import (
 	"bytes"

@@ -1,7 +1,7 @@
 // Copyright (c) 2021-2023 cions
-// Licensed under the MIT License. See LICENSE for details
+// Licensed under the MIT License. See LICENSE for details.
 
-package leveldbcli
+package main
 
 import (
 	"bytes"
@@ -27,7 +27,7 @@ type base64Writer struct {
 }
 
 func newBase64Writer(w io.Writer) *base64Writer {
-	return &base64Writer{w: w}
+	return &base64Writer{w}
 }
 
 func (w *base64Writer) Write(b []byte) (int, error) {
@@ -173,20 +173,20 @@ func decodeBase64(b []byte) ([]byte, error) {
 	return b[:n], nil
 }
 
-func parseHex(b []byte, n int) (uint, bool) {
+func parseHex(b []byte, n int) (uint32, bool) {
 	if len(b) < n {
 		return 0, false
 	}
-	var x uint
+	x := uint32(0)
 	for i := 0; i < n; i++ {
 		x <<= 4
 		switch {
 		case '0' <= b[i] && b[i] <= '9':
-			x |= uint(b[i] - '0')
+			x |= uint32(b[i] - '0')
 		case 'A' <= b[i] && b[i] <= 'F':
-			x |= uint(b[i] - 'A' + 10)
+			x |= uint32(b[i] - 'A' + 10)
 		case 'a' <= b[i] && b[i] <= 'f':
-			x |= uint(b[i] - 'a' + 10)
+			x |= uint32(b[i] - 'a' + 10)
 		default:
 			return 0, false
 		}
@@ -195,66 +195,60 @@ func parseHex(b []byte, n int) (uint, bool) {
 }
 
 func unescape(b []byte) ([]byte, error) {
-	s, d := 0, 0
-	for s < len(b) {
-		if b[s] != '\\' {
-			b[d] = b[s]
-			s++
-			d++
+	dst := b[:0]
+	i := 0
+	for i < len(b) {
+		if b[i] != '\\' {
+			dst = append(dst, b[i])
+			i += 1
 			continue
 		}
-		s++
-		if s == len(b) {
-			return nil, fmt.Errorf("truncated backslash escape at position %d", s-1)
+		if i+1 == len(b) {
+			return nil, fmt.Errorf("truncated backslash escape at position %d", i)
 		}
-		ssize := 1
-		dsize := 1
-		switch b[s] {
+		advance := 2
+		switch b[i+1] {
 		case '0':
-			b[d] = '\x00'
+			dst = append(dst, '\x00')
 		case 'a':
-			b[d] = '\a'
+			dst = append(dst, '\a')
 		case 'b':
-			b[d] = '\b'
+			dst = append(dst, '\b')
 		case 'f':
-			b[d] = '\f'
+			dst = append(dst, '\f')
 		case 'n':
-			b[d] = '\n'
+			dst = append(dst, '\n')
 		case 'r':
-			b[d] = '\r'
+			dst = append(dst, '\r')
 		case 't':
-			b[d] = '\t'
+			dst = append(dst, '\t')
 		case 'v':
-			b[d] = '\v'
+			dst = append(dst, '\v')
 		case 'x':
-			s++
-			r, ok := parseHex(b[s:], 2)
+			cp, ok := parseHex(b[i+2:], 2)
 			if !ok {
-				return nil, fmt.Errorf("truncated \\x escape at position %d", s-2)
+				return nil, fmt.Errorf("truncated \\x escape at position %d", i)
 			}
-			b[d] = byte(r)
-			ssize = 2
+			dst = append(dst, byte(cp))
+			advance = 4
 		case 'u':
-			s++
-			r, ok := parseHex(b[s:], 4)
+			cp, ok := parseHex(b[i+2:], 4)
 			if !ok {
-				return nil, fmt.Errorf("truncated \\u escape at position %d", s-2)
+				return nil, fmt.Errorf("truncated \\u escape at position %d", i)
 			}
-			ssize = 4
-			dsize = utf8.EncodeRune(b[d:], rune(r))
+			dst = utf8.AppendRune(dst, rune(cp))
+			advance = 6
 		case 'U':
-			s++
-			r, ok := parseHex(b[s:], 8)
+			cp, ok := parseHex(b[i+2:], 8)
 			if !ok {
-				return nil, fmt.Errorf("truncated \\U escape at position %d", s-2)
+				return nil, fmt.Errorf("truncated \\U escape at position %d", i)
 			}
-			ssize = 8
-			dsize = utf8.EncodeRune(b[d:], rune(r))
+			dst = utf8.AppendRune(dst, rune(cp))
+			advance = 10
 		default:
-			b[d] = b[s]
+			dst = append(dst, b[i+1])
 		}
-		s += ssize
-		d += dsize
+		i += advance
 	}
-	return b[:d], nil
+	return dst, nil
 }

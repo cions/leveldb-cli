@@ -1,5 +1,5 @@
 // Copyright (c) 2021-2023 cions
-// Licensed under the MIT License. See LICENSE for details
+// Licensed under the MIT License. See LICENSE for details.
 
 package indexeddb
 
@@ -47,24 +47,33 @@ func validVarInt(prefix []byte) bool {
 	return false
 }
 
-func encodeVarInt(v uint64) []byte {
-	buf := make([]byte, binary.MaxVarintLen64)
-	n := binary.PutUvarint(buf, v)
-	return buf[:n:n]
+func encodeVarInt(v int64) []byte {
+	u := uint64(v)
+	buf := make([]byte, 9)
+	for i := 0; i < 9; i++ {
+		if u&^0x7f == 0 {
+			buf[i] = byte(u)
+			n := i + 1
+			return buf[:n:n]
+		}
+		buf[i] = byte(u) | 0x80
+		u >>= 7
+	}
+	panic("encodeVarInt: out of range")
 }
 
 func prefixVarInt(prefix []byte, nexts ...prefixComponent) ([]byte, []byte) {
-	var v uint64 = 0
-	var min uint64 = 0
-	var max uint64 = math.MaxInt64
+	v := uint64(0)
+	minv := uint64(0)
+	maxv := uint64(math.MaxInt64)
 	i := 0
 	for i < len(prefix) {
 		v |= uint64(prefix[i]&0x7f) << (7 * i)
-		min = uint64(0x80) << (7 * i)
-		max &^= uint64(0x7f) << (7 * i)
+		minv = uint64(0x80) << (7 * i)
+		maxv &^= uint64(0x7f) << (7 * i)
 		if prefix[i]&0x80 == 0 {
-			min = v
-			max = v
+			minv = v
+			maxv = v
 			i++
 			break
 		}
@@ -73,20 +82,20 @@ func prefixVarInt(prefix []byte, nexts ...prefixComponent) ([]byte, []byte) {
 		}
 		i++
 	}
-	min |= v
-	max |= v
+	minv |= v
+	maxv |= v
 
 	var startTail, limitTail []byte
 	if len(prefix) > i && len(nexts) > 0 {
 		startTail, limitTail = nexts[0](prefix[i:], nexts[1:]...)
 	}
 
-	start := encodeVarInt(min)
+	start := encodeVarInt(int64(minv))
 	if len(limitTail) > 0 {
 		return append(start, startTail...), append(start, limitTail...)
 	}
-	if max < math.MaxInt64 {
-		return append(start, startTail...), encodeVarInt(max + 1)
+	if maxv < math.MaxInt64 {
+		return append(start, startTail...), encodeVarInt(int64(maxv) + 1)
 	}
 	return append(start, startTail...), nil
 }
@@ -95,7 +104,7 @@ func prefixBinary(prefix []byte, nexts ...prefixComponent) ([]byte, []byte) {
 	if !validVarInt(prefix) {
 		return prefixVarInt(prefix)
 	}
-	startLength, limitLength := prefixVarInt(prefix)
+
 	prefix, length := decodeVarInt(prefix)
 	body := prefix
 	if uint64(len(body)) > uint64(length) {
@@ -107,20 +116,24 @@ func prefixBinary(prefix []byte, nexts ...prefixComponent) ([]byte, []byte) {
 		startTail, limitTail = nexts[0](prefix[length:], nexts[1:]...)
 	}
 
+	start := encodeVarInt(length)
 	if len(limitTail) > 0 {
-		return append(append(startLength, body...), startTail...), append(append(startLength, body...), limitTail...)
+		return append(append(start, body...), startTail...), append(append(start, body...), limitTail...)
 	}
 	if limitBody := succBytes(body); limitBody != nil {
-		return append(append(startLength, body...), startTail...), append(startLength, limitBody...)
+		return append(append(start, body...), startTail...), append(start, limitBody...)
 	}
-	return append(append(startLength, body...), startTail...), limitLength
+	if length < math.MaxInt64 {
+		return append(append(start, body...), startTail...), encodeVarInt(length + 1)
+	}
+	return append(append(start, body...), startTail...), nil
 }
 
 func prefixStringWithLength(prefix []byte, nexts ...prefixComponent) ([]byte, []byte) {
 	if !validVarInt(prefix) {
 		return prefixVarInt(prefix)
 	}
-	startLength, limitLength := prefixVarInt(prefix)
+
 	prefix, v := decodeVarInt(prefix)
 	length := 2 * uint64(v)
 	body := prefix
@@ -133,13 +146,17 @@ func prefixStringWithLength(prefix []byte, nexts ...prefixComponent) ([]byte, []
 		startTail, limitTail = nexts[0](prefix[length:], nexts[1:]...)
 	}
 
+	start := encodeVarInt(v)
 	if len(limitTail) > 0 {
-		return append(append(startLength, body...), startTail...), append(append(startLength, body...), limitTail...)
+		return append(append(start, body...), startTail...), append(append(start, body...), limitTail...)
 	}
 	if limitBody := succBytes(body); limitBody != nil {
-		return append(append(startLength, body...), startTail...), append(startLength, limitBody...)
+		return append(append(start, body...), startTail...), append(start, limitBody...)
 	}
-	return append(append(startLength, body...), startTail...), limitLength
+	if v < math.MaxInt64 {
+		return append(append(start, body...), startTail...), encodeVarInt(v + 1)
+	}
+	return append(append(start, body...), startTail...), nil
 }
 
 func prefixDouble(prefix []byte, nexts ...prefixComponent) ([]byte, []byte) {
@@ -211,12 +228,16 @@ func prefixEncodedIDBKeys(prefix []byte, nexts ...prefixComponent) ([]byte, []by
 		start = []byte{indexedDBKeyDateTypeByte}
 		limit = []byte{indexedDBKeyNumberTypeByte}
 
-		startTail, limitTail = prefixDouble(prefix, nexts...)
+		if len(prefix) > 0 {
+			startTail, limitTail = prefixDouble(prefix, nexts...)
+		}
 	case indexedDBKeyNumberTypeByte:
 		start = []byte{indexedDBKeyNumberTypeByte}
 		limit = []byte{indexedDBKeyMinKeyTypeByte}
 
-		startTail, limitTail = prefixDouble(prefix, nexts...)
+		if len(prefix) > 0 {
+			startTail, limitTail = prefixDouble(prefix, nexts...)
+		}
 	case indexedDBKeyMinKeyTypeByte:
 		start = []byte{indexedDBKeyMinKeyTypeByte}
 		limit = nil
@@ -234,7 +255,7 @@ func prefixEncodedIDBKeys(prefix []byte, nexts ...prefixComponent) ([]byte, []by
 	return append(start, startTail...), limit
 }
 
-func prefixKeyRest(prefix []byte, k *keyPrefix) ([]byte, []byte) {
+func prefixKeyBody(prefix []byte, k *keyPrefix) ([]byte, []byte) {
 	switch k.Type() {
 	case globalMetadata:
 		switch prefix[0] {
@@ -295,17 +316,16 @@ func encodeKeyPrefix(k *keyPrefix) []byte {
 		indexIdBytes = (bits.Len32(uint32(k.IndexId)) + 7) / 8
 	}
 
-	encoded := make([]byte, 1+databaseIdBytes+objectStoreIdBytes+indexIdBytes)
+	encoded := make([]byte, 1, 1+databaseIdBytes+objectStoreIdBytes+indexIdBytes)
 	encoded[0] = byte(((databaseIdBytes - 1) << 5) | ((objectStoreIdBytes - 1) << 2) | (indexIdBytes - 1))
 
 	var buf [8]byte
-	startidx := 1
 	binary.LittleEndian.PutUint64(buf[:], uint64(k.DatabaseId))
-	startidx += copy(encoded[startidx:], buf[:databaseIdBytes])
+	encoded = append(encoded, buf[:databaseIdBytes]...)
 	binary.LittleEndian.PutUint64(buf[:], uint64(k.ObjectStoreId))
-	startidx += copy(encoded[startidx:], buf[:objectStoreIdBytes])
-	binary.LittleEndian.PutUint64(buf[:], uint64(k.IndexId))
-	copy(encoded[startidx:], buf[:indexIdBytes])
+	encoded = append(encoded, buf[:objectStoreIdBytes]...)
+	binary.LittleEndian.PutUint32(buf[:], uint32(k.IndexId))
+	encoded = append(encoded, buf[:indexIdBytes]...)
 
 	return encoded
 }
@@ -336,79 +356,88 @@ func succKeyPrefix(k *keyPrefix) *keyPrefix {
 	return nil
 }
 
+func prefixPartialKeyPrefix(prefix []byte) ([]byte, []byte) {
+	databaseIdBytes := int((((prefix[0] >> 5) & 0x07) + 1))
+	objectStoreIdBytes := int(((prefix[0] >> 2) & 0x07) + 1)
+	indexIdBytes := int((prefix[0] & 0x03) + 1)
+
+	prefix = prefix[1:]
+	mink := &keyPrefix{}
+	maxk := &keyPrefix{
+		DatabaseId:    math.MaxInt64,
+		ObjectStoreId: math.MaxInt64,
+		IndexId:       math.MaxUint32,
+	}
+
+	if len(prefix) >= databaseIdBytes {
+		mink.DatabaseId = decodeInt(prefix[:databaseIdBytes])
+		maxk.DatabaseId = decodeInt(prefix[:databaseIdBytes])
+		prefix = prefix[databaseIdBytes:]
+	} else {
+		if databaseIdBytes > 1 {
+			mink.DatabaseId = int64(1) << (8 * (databaseIdBytes - 1))
+		}
+		if databaseIdBytes < 8 {
+			maxk.DatabaseId = (int64(1) << (8 * databaseIdBytes)) - 1
+		}
+		if len(prefix) > 0 {
+			v := decodeInt(prefix)
+			mink.DatabaseId |= v
+			maxk.DatabaseId &^= (int64(1) << (8 * len(prefix))) - 1
+			maxk.DatabaseId |= v
+			prefix = prefix[len(prefix):]
+		}
+	}
+
+	if len(prefix) >= objectStoreIdBytes {
+		mink.ObjectStoreId = decodeInt(prefix[:objectStoreIdBytes])
+		maxk.ObjectStoreId = decodeInt(prefix[:objectStoreIdBytes])
+		prefix = prefix[objectStoreIdBytes:]
+	} else {
+		if objectStoreIdBytes > 1 {
+			mink.ObjectStoreId = int64(1) << (8 * (objectStoreIdBytes - 1))
+		}
+		if objectStoreIdBytes < 8 {
+			maxk.ObjectStoreId = (int64(1) << (8 * objectStoreIdBytes)) - 1
+		}
+		if len(prefix) > 0 {
+			v := decodeInt(prefix)
+			mink.ObjectStoreId |= v
+			maxk.ObjectStoreId &^= (int64(1) << (8 * len(prefix))) - 1
+			maxk.ObjectStoreId |= v
+			prefix = prefix[len(prefix):]
+		}
+	}
+
+	if indexIdBytes > 1 {
+		mink.IndexId = int64(1) << (8 * (indexIdBytes - 1))
+	}
+	maxk.IndexId = (int64(1) << (8 * indexIdBytes)) - 1
+	if len(prefix) > 0 {
+		v := decodeInt(prefix)
+		mink.IndexId |= v
+		maxk.IndexId &^= (int64(1) << (8 * len(prefix))) - 1
+		maxk.IndexId |= v
+	}
+
+	return encodeKeyPrefix(mink), encodeKeyPrefix(succKeyPrefix(maxk))
+
+}
+
 func prefixKeyPrefix(prefix []byte) ([]byte, []byte) {
 	databaseIdBytes := int((((prefix[0] >> 5) & 0x07) + 1))
 	objectStoreIdBytes := int(((prefix[0] >> 2) & 0x07) + 1)
 	indexIdBytes := int((prefix[0] & 0x03) + 1)
 
 	if len(prefix) < 1+databaseIdBytes+objectStoreIdBytes+indexIdBytes {
-		prefix := prefix[1:]
-		min := &keyPrefix{}
-		max := &keyPrefix{
-			DatabaseId:    math.MaxInt64,
-			ObjectStoreId: math.MaxInt64,
-			IndexId:       math.MaxUint32,
-		}
-
-		if len(prefix) >= databaseIdBytes {
-			min.DatabaseId = decodeInt(prefix[:databaseIdBytes])
-			max.DatabaseId = decodeInt(prefix[:databaseIdBytes])
-			prefix = prefix[databaseIdBytes:]
-		} else {
-			if databaseIdBytes > 1 {
-				min.DatabaseId = int64(1) << (8 * (databaseIdBytes - 1))
-			}
-			if databaseIdBytes < 8 {
-				max.DatabaseId = (int64(1) << (8 * databaseIdBytes)) - 1
-			}
-			if len(prefix) > 0 {
-				v := decodeInt(prefix)
-				min.DatabaseId |= v
-				max.DatabaseId &^= (int64(1) << (8 * len(prefix))) - 1
-				max.DatabaseId |= v
-				prefix = prefix[len(prefix):]
-			}
-		}
-
-		if len(prefix) >= objectStoreIdBytes {
-			min.ObjectStoreId = decodeInt(prefix[:objectStoreIdBytes])
-			max.ObjectStoreId = decodeInt(prefix[:objectStoreIdBytes])
-			prefix = prefix[objectStoreIdBytes:]
-		} else {
-			if objectStoreIdBytes > 1 {
-				min.ObjectStoreId = int64(1) << (8 * (objectStoreIdBytes - 1))
-			}
-			if objectStoreIdBytes < 8 {
-				max.ObjectStoreId = (int64(1) << (8 * objectStoreIdBytes)) - 1
-			}
-			if len(prefix) > 0 {
-				v := decodeInt(prefix)
-				min.ObjectStoreId |= v
-				max.ObjectStoreId &^= (int64(1) << (8 * len(prefix))) - 1
-				max.ObjectStoreId |= v
-				prefix = prefix[len(prefix):]
-			}
-		}
-
-		if indexIdBytes > 1 {
-			min.IndexId = int64(1) << (8 * (indexIdBytes - 1))
-		}
-		max.IndexId = (int64(1) << (8 * indexIdBytes)) - 1
-		if len(prefix) > 0 {
-			v := decodeInt(prefix)
-			min.IndexId |= v
-			max.IndexId &^= (int64(1) << (8 * len(prefix))) - 1
-			max.IndexId |= v
-		}
-
-		return encodeKeyPrefix(min), encodeKeyPrefix(succKeyPrefix(max))
+		return prefixPartialKeyPrefix(prefix)
 	}
 
 	prefix, keyPrefix := decodeKeyPrefix(prefix)
 
 	var startTail, limitTail []byte
 	if len(prefix) > 0 {
-		startTail, limitTail = prefixKeyRest(prefix, keyPrefix)
+		startTail, limitTail = prefixKeyBody(prefix, keyPrefix)
 	}
 
 	start := encodeKeyPrefix(keyPrefix)
