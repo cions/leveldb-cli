@@ -45,6 +45,26 @@ func getArg(c *cli.Context, n int) ([]byte, error) {
 	}
 }
 
+func hasKeyRange(c *cli.Context) bool {
+	flagNames := []string{
+		"start",
+		"start-raw",
+		"start-base64",
+		"end",
+		"end-raw",
+		"end-base64",
+		"prefix",
+		"prefix-raw",
+		"prefix-base64",
+	}
+	for _, flagName := range flagNames {
+		if c.IsSet(flagName) {
+			return true
+		}
+	}
+	return false
+}
+
 func getKeyRange(c *cli.Context) (*util.Range, error) {
 	if c.IsSet("prefix-base64") {
 		prefix, err := decodeBase64([]byte(c.String("prefix-base64")))
@@ -201,13 +221,22 @@ func putCmd(c *cli.Context) error {
 }
 
 func deleteCmd(c *cli.Context) error {
-	if c.NArg() < 1 {
+	if !hasKeyRange(c) && c.NArg() == 0 {
 		cli.ShowSubcommandHelpAndExit(c, 2)
 	}
 
-	key, err := getArg(c, 0)
+	slice, err := getKeyRange(c)
 	if err != nil {
 		return err
+	}
+
+	batch := new(leveldb.Batch)
+	for i := 0; i < c.NArg(); i++ {
+		key, err := getArg(c, i)
+		if err != nil {
+			return err
+		}
+		batch.Delete(key)
 	}
 
 	db, err := leveldb.OpenFile(c.String("dbpath"), &opt.Options{
@@ -219,7 +248,27 @@ func deleteCmd(c *cli.Context) error {
 	}
 	defer db.Close()
 
-	if err := db.Delete(key, nil); err != nil {
+	if c.NArg() == 0 {
+		s, err := db.GetSnapshot()
+		if err != nil {
+			return err
+		}
+		defer s.Release()
+
+		iter := s.NewIterator(slice, nil)
+		defer iter.Release()
+		for iter.Next() {
+			batch.Delete(iter.Key())
+		}
+		if err := iter.Error(); err != nil {
+			return err
+		}
+
+		iter.Release()
+		s.Release()
+	}
+
+	if err := db.Write(batch, nil); err != nil {
 		return err
 	}
 

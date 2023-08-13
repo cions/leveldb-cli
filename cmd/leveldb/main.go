@@ -102,7 +102,7 @@ func main() {
 				Name:      "delete",
 				Aliases:   []string{"d"},
 				Usage:     "delete the value for the given key",
-				ArgsUsage: "<key>",
+				ArgsUsage: "<key>...",
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
 						Name:    "raw",
@@ -114,8 +114,51 @@ func main() {
 						Aliases: []string{"b"},
 						Usage:   "interpret arguments as base64-encoded",
 					},
+					&cli.StringFlag{
+						Name:    "start",
+						Aliases: []string{"s"},
+						Usage:   "start of the `key` range (inclusive)",
+					},
+					&cli.StringFlag{
+						Name:    "start-raw",
+						Aliases: []string{"S"},
+						Usage:   "start of the `key` range (no backslash escapes, inclusive)",
+					},
+					&cli.StringFlag{
+						Name:  "start-base64",
+						Usage: "start of the `key` range (base64, inclusive)",
+					},
+					&cli.StringFlag{
+						Name:    "end",
+						Aliases: []string{"e"},
+						Usage:   "end of the `key` range (exclusive)",
+					},
+					&cli.StringFlag{
+						Name:    "end-raw",
+						Aliases: []string{"E"},
+						Usage:   "end of the `key` range (no backslash escapes, exclusive)",
+					},
+					&cli.StringFlag{
+						Name:  "end-base64",
+						Usage: "end of the `key` range (base64, exclusive)",
+					},
+					&cli.StringFlag{
+						Name:    "prefix",
+						Aliases: []string{"p"},
+						Usage:   "limit the key range to a range that satisfy the given `prefix`",
+					},
+					&cli.StringFlag{
+						Name:    "prefix-raw",
+						Aliases: []string{"P"},
+						Usage:   "limit the key range to a range that satisfy the given `prefix` (no backslash escapes)",
+					},
+					&cli.StringFlag{
+						Name:  "prefix-base64",
+						Usage: "limit the key range to a range that satisfy the given `prefix` (base64)",
+					},
 				},
-				Action: deleteCmd,
+				UseShortOptionHandling: true,
+				Action:                 deleteCmd,
 			},
 			{
 				Name:      "keys",
