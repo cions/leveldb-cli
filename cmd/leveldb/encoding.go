@@ -68,7 +68,7 @@ func (w *prettyPrinter) SetParseJSON(b bool) *prettyPrinter {
 }
 
 func (w *prettyPrinter) Write(b []byte) (int, error) {
-	red := color.New(color.FgRed).FprintfFunc()
+	dimmed := color.New(color.Faint).FprintfFunc()
 
 	if w.parseJSON {
 		for {
@@ -106,54 +106,54 @@ func (w *prettyPrinter) Write(b []byte) (int, error) {
 		r, size := utf8.DecodeRune(b)
 		switch {
 		case r == utf8.RuneError:
-			red(buf, "\\x%02x", b[0])
+			dimmed(buf, "\\x%02x", b[0])
 			nwritten += 4
 		case r == 0:
-			red(buf, "\\0")
+			dimmed(buf, "\\0")
 			nwritten += 2
 		case r == '"' && w.quoting:
-			red(buf, "\\\"")
+			dimmed(buf, "\\\"")
 			nwritten += 2
 		case r == '\\':
-			red(buf, "\\\\")
+			dimmed(buf, "\\\\")
 			nwritten += 2
 		case r == '\a':
-			red(buf, "\\a")
+			dimmed(buf, "\\a")
 			nwritten += 2
 		case r == '\b':
-			red(buf, "\\b")
+			dimmed(buf, "\\b")
 			nwritten += 2
 		case r == '\f':
-			red(buf, "\\f")
+			dimmed(buf, "\\f")
 			nwritten += 2
 		case r == '\n':
-			red(buf, "\\n")
+			dimmed(buf, "\\n")
 			nwritten += 2
 		case r == '\r':
-			red(buf, "\\r")
+			dimmed(buf, "\\r")
 			nwritten += 2
 		case r == '\t':
-			red(buf, "\\t")
+			dimmed(buf, "\\t")
 			nwritten += 2
 		case r == '\v':
-			red(buf, "\\v")
+			dimmed(buf, "\\v")
 			nwritten += 2
 		case unicode.IsPrint(r):
 			buf.WriteRune(r)
 			nwritten += 1
 		case r <= 0x7f:
-			red(buf, "\\x%02x", r)
+			dimmed(buf, "\\x%02x", r)
 			nwritten += 4
 		case r <= 0xffff:
-			red(buf, "\\u%04x", r)
+			dimmed(buf, "\\u%04x", r)
 			nwritten += 6
 		default:
-			red(buf, "\\U%08x", r)
+			dimmed(buf, "\\U%08x", r)
 			nwritten += 8
 		}
 		b = b[size:]
 		if w.truncate && nwritten >= 250 {
-			red(buf, "...")
+			dimmed(buf, "...")
 			break
 		}
 	}
