@@ -490,6 +490,17 @@ func loadCmd(c *cli.Context) error {
 	return loadDB(c.String("dbpath"), getComparer(c), os.Stdin)
 }
 
+func repairCmd(c *cli.Context) (err error) {
+	db, err := leveldb.RecoverFile(c.String("dbpath"), nil)
+	if err != nil {
+		return err
+	}
+	if err := db.Close(); err != nil {
+		return err
+	}
+	return nil
+}
+
 func compactCmd(c *cli.Context) error {
 	dbpath := c.String("dbpath")
 	cmp := getComparer(c)

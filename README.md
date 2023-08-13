@@ -19,6 +19,7 @@ $ leveldb keys
 $ leveldb show
 $ leveldb dump
 $ leveldb load
+$ leveldb repair
 $ leveldb compact
 $ leveldb destroy
 ```

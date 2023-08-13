@@ -264,6 +264,12 @@ func main() {
 				Action:    loadCmd,
 			},
 			{
+				Name:      "repair",
+				Usage:     "repair the database",
+				ArgsUsage: " ",
+				Action:    repairCmd,
+			},
+			{
 				Name:      "compact",
 				Usage:     "compact the database",
 				ArgsUsage: " ",
