@@ -254,13 +254,20 @@ func main() {
 			{
 				Name:      "dump",
 				Usage:     "dump the database as MessagePack",
-				ArgsUsage: " ",
+				ArgsUsage: "[output]",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name:    "no-clobber",
+						Aliases: []string{"n"},
+						Usage:   "do not overwrite an existing file",
+					},
+				},
 				Action: dumpCmd,
 			},
 			{
 				Name:      "load",
 				Usage:     "load MessagePack into the database",
-				ArgsUsage: " ",
+				ArgsUsage: "[input]",
 				Action:    loadCmd,
 			},
 			{

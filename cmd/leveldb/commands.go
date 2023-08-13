@@ -483,11 +483,35 @@ func destroyDB(dbpath string, dryRun bool) error {
 }
 
 func dumpCmd(c *cli.Context) error {
-	return dumpDB(c.String("dbpath"), getComparer(c), os.Stdout)
+	var w io.Writer = os.Stdout
+	if c.NArg() >= 1 && c.Args().Get(0) != "-" {
+		flags := os.O_WRONLY | os.O_CREATE | os.O_TRUNC
+		if c.Bool("no-clobber") {
+			flags |= os.O_EXCL
+		}
+		fh, err := os.OpenFile(c.Args().Get(0), flags, 0o666)
+		if err != nil {
+			return err
+		}
+		defer fh.Close()
+		w = fh
+	}
+
+	return dumpDB(c.String("dbpath"), getComparer(c), w)
 }
 
 func loadCmd(c *cli.Context) error {
-	return loadDB(c.String("dbpath"), getComparer(c), os.Stdin)
+	var r io.Reader = os.Stdin
+	if c.NArg() >= 1 && c.Args().Get(0) != "-" {
+		fh, err := os.Open(c.Args().Get(0))
+		if err != nil {
+			return err
+		}
+		defer fh.Close()
+		r = fh
+	}
+
+	return loadDB(c.String("dbpath"), getComparer(c), r)
 }
 
 func repairCmd(c *cli.Context) (err error) {
