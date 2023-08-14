@@ -5,9 +5,11 @@ package indexeddb
 
 import (
 	"bytes"
+	"cmp"
+	"encoding/binary"
 	"fmt"
+	"math"
 	"os"
-	"unsafe"
 
 	"github.com/syndtr/goleveldb/leveldb/comparer"
 )
@@ -93,55 +95,16 @@ func decodeVarInt(a []byte) ([]byte, int64) {
 	panic("invalid key")
 }
 
-func compareByte(a, b byte) int {
-	if a < b {
-		return -1
-	}
-	if a > b {
-		return 1
-	}
-	return 0
-}
-
-func compareInt(a, b int) int {
-	if a < b {
-		return -1
-	}
-	if a > b {
-		return 1
-	}
-	return 0
-}
-
-func compareInt64(a, b int64) int {
-	if a < b {
-		return -1
-	}
-	if a > b {
-		return 1
-	}
-	return 0
-}
-
 func compareBinary(a, b []byte) ([]byte, []byte, int) {
 	a, len1 := decodeVarInt(a)
 	b, len2 := decodeVarInt(b)
 
 	if uint64(len(a)) < uint64(len1) || uint64(len(b)) < uint64(len2) {
-		minlen := uint64(len1)
-		if uint64(len2) < minlen {
-			minlen = uint64(len2)
-		}
-		if uint64(len(a)) < minlen {
-			minlen = uint64(len(a))
-		}
-		if uint64(len(b)) < minlen {
-			minlen = uint64(len(b))
-		}
+		minlen := min(uint64(len1), uint64(len2), uint64(len(a)), uint64(len(b)))
 		if ret := bytes.Compare(a[:minlen], b[:minlen]); ret != 0 {
 			return nil, nil, ret
 		}
-		return nil, nil, compareInt64(len1, len2)
+		return nil, nil, cmp.Compare(len1, len2)
 	}
 
 	return a[len1:], b[len2:], bytes.Compare(a[:len1], b[:len2])
@@ -154,20 +117,11 @@ func compareStringWithLength(a, b []byte) ([]byte, []byte, int) {
 	len2 := 2 * uint64(v2)
 
 	if uint64(len(a)) < len1 || uint64(len(b)) < len2 {
-		minlen := len1
-		if len2 < minlen {
-			minlen = len2
-		}
-		if uint64(len(a)) < minlen {
-			minlen = uint64(len(a))
-		}
-		if uint64(len(b)) < minlen {
-			minlen = uint64(len(b))
-		}
+		minlen := min(len1, len2, uint64(len(a)), uint64(len(b)))
 		if ret := bytes.Compare(a[:minlen], b[:minlen]); ret != 0 {
 			return nil, nil, ret
 		}
-		return nil, nil, compareInt64(v1, v2)
+		return nil, nil, cmp.Compare(v1, v2)
 	}
 
 	return a[len1:], b[len2:], bytes.Compare(a[:len1], b[:len2])
@@ -178,16 +132,9 @@ func compareDouble(a, b []byte) ([]byte, []byte, int) {
 		panic("invalid key")
 	}
 
-	f1 := *(*float64)(unsafe.Pointer(&a[0]))
-	f2 := *(*float64)(unsafe.Pointer(&b[0]))
-
-	if f1 < f2 {
-		return a[8:], b[8:], -1
-	}
-	if f1 > f2 {
-		return a[8:], b[8:], 1
-	}
-	return a[8:], b[8:], 0
+	f1 := math.Float64frombits(binary.NativeEndian.Uint64(a))
+	f2 := math.Float64frombits(binary.NativeEndian.Uint64(b))
+	return a[8:], b[8:], cmp.Compare(f1, f2)
 }
 
 func keyTypeByteToKeyType(b byte) int {
@@ -213,10 +160,10 @@ func keyTypeByteToKeyType(b byte) int {
 
 func compareEncodedIDBKeys(a, b []byte) ([]byte, []byte, int) {
 	if len(a) == 0 || len(b) == 0 {
-		return a, b, compareInt(len(a), len(b))
+		return a, b, cmp.Compare(len(a), len(b))
 	}
 
-	ret := compareInt(keyTypeByteToKeyType(a[0]), keyTypeByteToKeyType(b[0]))
+	ret := cmp.Compare(keyTypeByteToKeyType(a[0]), keyTypeByteToKeyType(b[0]))
 	if ret != 0 {
 		return a[1:], b[1:], ret
 	}
@@ -229,7 +176,7 @@ func compareEncodedIDBKeys(a, b []byte) ([]byte, []byte, int) {
 		return a, b, 0
 	case indexedDBKeyArrayTypeByte:
 		if len(a) == 0 || len(b) == 0 {
-			return a, b, compareInt(len(a), len(b))
+			return a, b, cmp.Compare(len(a), len(b))
 		}
 		a, len1 := decodeVarInt(a)
 		b, len2 := decodeVarInt(b)
@@ -242,20 +189,20 @@ func compareEncodedIDBKeys(a, b []byte) ([]byte, []byte, int) {
 				return a, b, ret
 			}
 		}
-		return a, b, compareInt64(len1, len2)
+		return a, b, cmp.Compare(len1, len2)
 	case indexedDBKeyBinaryTypeByte:
 		if len(a) == 0 || len(b) == 0 {
-			return a, b, compareInt(len(a), len(b))
+			return a, b, cmp.Compare(len(a), len(b))
 		}
 		return compareBinary(a, b)
 	case indexedDBKeyStringTypeByte:
 		if len(a) == 0 || len(b) == 0 {
-			return a, b, compareInt(len(a), len(b))
+			return a, b, cmp.Compare(len(a), len(b))
 		}
 		return compareStringWithLength(a, b)
 	case indexedDBKeyDateTypeByte, indexedDBKeyNumberTypeByte:
 		if len(a) == 0 || len(b) == 0 {
-			return a, b, compareInt(len(a), len(b))
+			return a, b, cmp.Compare(len(a), len(b))
 		}
 		return compareDouble(a, b)
 	default:
@@ -315,13 +262,13 @@ func decodeKeyPrefix(a []byte) ([]byte, *keyPrefix) {
 }
 
 func compareKeyPrefix(a, b *keyPrefix) int {
-	if ret := compareInt64(a.DatabaseId, b.DatabaseId); ret != 0 {
+	if ret := cmp.Compare(a.DatabaseId, b.DatabaseId); ret != 0 {
 		return ret
 	}
-	if ret := compareInt64(a.ObjectStoreId, b.ObjectStoreId); ret != 0 {
+	if ret := cmp.Compare(a.ObjectStoreId, b.ObjectStoreId); ret != 0 {
 		return ret
 	}
-	if ret := compareInt64(a.IndexId, b.IndexId); ret != 0 {
+	if ret := cmp.Compare(a.IndexId, b.IndexId); ret != 0 {
 		return ret
 	}
 	return 0
@@ -348,9 +295,9 @@ func (idbCmp1) Compare(a, b []byte) int {
 	switch prefixA.Type() {
 	case globalMetadata:
 		if len(a) == 0 || len(b) == 0 {
-			return compareInt(len(a), len(b))
+			return cmp.Compare(len(a), len(b))
 		}
-		if ret := compareByte(a[0], b[0]); ret != 0 {
+		if ret := cmp.Compare(a[0], b[0]); ret != 0 {
 			return ret
 		}
 
@@ -366,14 +313,14 @@ func (idbCmp1) Compare(a, b []byte) int {
 			return bytes.Compare(a, b)
 		case databaseFreeListTypeByte:
 			if len(a) == 0 || len(b) == 0 {
-				return compareInt(len(a), len(b))
+				return cmp.Compare(len(a), len(b))
 			}
 			_, databaseIdA := decodeVarInt(a)
 			_, databaseIdB := decodeVarInt(b)
-			return compareInt64(databaseIdA, databaseIdB)
+			return cmp.Compare(databaseIdA, databaseIdB)
 		case databaseNameTypeByte:
 			if len(a) == 0 || len(b) == 0 {
-				return compareInt(len(a), len(b))
+				return cmp.Compare(len(a), len(b))
 			}
 			a, b, ret := compareStringWithLength(a, b)
 			if ret != 0 {
@@ -381,7 +328,7 @@ func (idbCmp1) Compare(a, b []byte) int {
 			}
 
 			if len(a) == 0 || len(b) == 0 {
-				return compareInt(len(a), len(b))
+				return cmp.Compare(len(a), len(b))
 			}
 			_, _, ret = compareStringWithLength(a, b)
 			return ret
@@ -390,9 +337,9 @@ func (idbCmp1) Compare(a, b []byte) int {
 		}
 	case databaseMetadata:
 		if len(a) == 0 || len(b) == 0 {
-			return compareInt(len(a), len(b))
+			return cmp.Compare(len(a), len(b))
 		}
-		if ret := compareByte(a[0], b[0]); ret != 0 {
+		if ret := cmp.Compare(a[0], b[0]); ret != 0 {
 			return ret
 		}
 
@@ -406,82 +353,82 @@ func (idbCmp1) Compare(a, b []byte) int {
 		switch typeByte {
 		case objectStoreMetaDataTypeByte:
 			if len(a) == 0 || len(b) == 0 {
-				return compareInt(len(a), len(b))
+				return cmp.Compare(len(a), len(b))
 			}
 			a, objectStoreIdA := decodeVarInt(a)
 			b, objectStoreIdB := decodeVarInt(b)
-			if ret := compareInt64(objectStoreIdA, objectStoreIdB); ret != 0 {
+			if ret := cmp.Compare(objectStoreIdA, objectStoreIdB); ret != 0 {
 				return ret
 			}
 
 			if len(a) == 0 || len(b) == 0 {
-				return compareInt(len(a), len(b))
+				return cmp.Compare(len(a), len(b))
 			}
-			return compareByte(a[0], b[0])
+			return cmp.Compare(a[0], b[0])
 		case indexMetaDataTypeByte:
 			if len(a) == 0 || len(b) == 0 {
-				return compareInt(len(a), len(b))
+				return cmp.Compare(len(a), len(b))
 			}
 			a, objectStoreIdA := decodeVarInt(a)
 			b, objectStoreIdB := decodeVarInt(b)
-			if ret := compareInt64(objectStoreIdA, objectStoreIdB); ret != 0 {
+			if ret := cmp.Compare(objectStoreIdA, objectStoreIdB); ret != 0 {
 				return ret
 			}
 
 			if len(a) == 0 || len(b) == 0 {
-				return compareInt(len(a), len(b))
+				return cmp.Compare(len(a), len(b))
 			}
 			a, indexIdA := decodeVarInt(a)
 			b, indexIdB := decodeVarInt(b)
-			if ret := compareInt64(indexIdA, indexIdB); ret != 0 {
+			if ret := cmp.Compare(indexIdA, indexIdB); ret != 0 {
 				return ret
 			}
 
 			if len(a) == 0 || len(b) == 0 {
-				return compareInt(len(a), len(b))
+				return cmp.Compare(len(a), len(b))
 			}
-			return compareByte(a[0], b[0])
+			return cmp.Compare(a[0], b[0])
 		case objectStoreFreeListTypeByte:
 			if len(a) == 0 || len(b) == 0 {
-				return compareInt(len(a), len(b))
+				return cmp.Compare(len(a), len(b))
 			}
 			_, objectStoreIdA := decodeVarInt(a)
 			_, objectStoreIdB := decodeVarInt(b)
-			return compareInt64(objectStoreIdA, objectStoreIdB)
+			return cmp.Compare(objectStoreIdA, objectStoreIdB)
 		case indexFreeListTypeByte:
 			if len(a) == 0 || len(b) == 0 {
-				return compareInt(len(a), len(b))
+				return cmp.Compare(len(a), len(b))
 			}
 			a, objectStoreIdA := decodeVarInt(a)
 			b, objectStoreIdB := decodeVarInt(b)
-			if ret := compareInt64(objectStoreIdA, objectStoreIdB); ret != 0 {
+			if ret := cmp.Compare(objectStoreIdA, objectStoreIdB); ret != 0 {
 				return ret
 			}
 
 			if len(a) == 0 || len(b) == 0 {
-				return compareInt(len(a), len(b))
+				return cmp.Compare(len(a), len(b))
 			}
 			_, indexIdA := decodeVarInt(a)
 			_, indexIdB := decodeVarInt(b)
-			return compareInt64(indexIdA, indexIdB)
+			return cmp.Compare(indexIdA, indexIdB)
 		case objectStoreNamesTypeByte:
 			if len(a) == 0 || len(b) == 0 {
-				return compareInt(len(a), len(b))
+				return cmp.Compare(len(a), len(b))
 			}
 			_, _, ret := compareStringWithLength(a, b)
 			return ret
 		case indexNamesKeyTypeByte:
 			if len(a) == 0 || len(b) == 0 {
-				return compareInt(len(a), len(b))
+				return cmp.Compare(len(a), len(b))
 			}
 			a, objectStoreIdA := decodeVarInt(a)
 			b, objectStoreIdB := decodeVarInt(b)
-			if ret := compareInt64(objectStoreIdA, objectStoreIdB); ret != 0 {
+			if ret := cmp.Compare(objectStoreIdA, objectStoreIdB); ret != 0 {
 				return ret
 			}
 
 			if len(a) == 0 || len(b) == 0 {
-				return compareInt(len(a), len(b))
+				return cmp.Compare(len(a), len(b))
 			}
 			_, _, ret := compareStringWithLength(a, b)
 			return ret
@@ -513,14 +460,14 @@ func (idbCmp1) Compare(a, b []byte) int {
 		}
 
 		if len(a) == 0 || len(b) == 0 {
-			return compareInt(len(a), len(b))
+			return cmp.Compare(len(a), len(b))
 		}
 		_, _, ret = compareEncodedIDBKeys(a, b)
 		if ret != 0 {
 			return ret
 		}
 
-		return compareInt64(sequenceNumberA, sequenceNumberB)
+		return cmp.Compare(sequenceNumberA, sequenceNumberB)
 	default:
 		panic("invalid key")
 	}

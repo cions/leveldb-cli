@@ -303,18 +303,9 @@ func encodeKeyPrefix(k *keyPrefix) []byte {
 		return nil
 	}
 
-	databaseIdBytes := 1
-	if k.DatabaseId != 0 {
-		databaseIdBytes = (bits.Len64(uint64(k.DatabaseId)) + 7) / 8
-	}
-	objectStoreIdBytes := 1
-	if k.ObjectStoreId != 0 {
-		objectStoreIdBytes = (bits.Len64(uint64(k.ObjectStoreId)) + 7) / 8
-	}
-	indexIdBytes := 1
-	if k.IndexId != 0 {
-		indexIdBytes = (bits.Len32(uint32(k.IndexId)) + 7) / 8
-	}
+	databaseIdBytes := max((bits.Len64(uint64(k.DatabaseId))+7)/8, 1)
+	objectStoreIdBytes := max((bits.Len64(uint64(k.ObjectStoreId))+7)/8, 1)
+	indexIdBytes := max((bits.Len32(uint32(k.IndexId))+7)/8, 1)
 
 	encoded := make([]byte, 1, 1+databaseIdBytes+objectStoreIdBytes+indexIdBytes)
 	encoded[0] = byte(((databaseIdBytes - 1) << 5) | ((objectStoreIdBytes - 1) << 2) | (indexIdBytes - 1))
