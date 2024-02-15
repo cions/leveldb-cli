@@ -1,4 +1,4 @@
-// Copyright (c) 2021-2023 cions
+// Copyright (c) 2021-2024 cions
 // Licensed under the MIT License. See LICENSE for details.
 
 package main
