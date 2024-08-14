@@ -21,7 +21,7 @@ import (
 	"github.com/vmihailenco/msgpack/v5"
 )
 
-var leveldbFilenamePattern = regexp.MustCompile(`^(?:LOCK|LOG(?:\.old)?|CURRENT(?:\.bak|\.\d+)?|MANIFEST-\d+|\d+\.(?:ldb|log|sst|tmp))$`)
+var leveldbFilenamePattern = regexp.MustCompile(`\A(?:LOCK|LOG(?:\.old)?|CURRENT(?:\.bak|\.\d+)?|MANIFEST-\d+|\d+\.(?:ldb|log|sst|tmp))\z`)
 
 type entry struct {
 	Key, Value []byte
@@ -131,6 +131,54 @@ func getKeyRange(c *cli.Context) (*util.Range, error) {
 	return slice, nil
 }
 
+type matcher interface {
+	Match(key []byte) bool
+}
+
+type constMatcher bool
+
+func (m constMatcher) Match(key []byte) bool {
+	return bool(m)
+}
+
+type literalMatcher [][]byte
+
+func (m literalMatcher) Match(key []byte) bool {
+	for _, pattern := range m {
+		if bytes.Equal(pattern, key) {
+			return true
+		}
+	}
+	return false
+}
+
+func newLiteralMatcher(keys ...[]byte) literalMatcher {
+	return keys
+}
+
+type regexpMatcher []*regexp.Regexp
+
+func (m regexpMatcher) Match(key []byte) bool {
+	for _, pattern := range m {
+		if pattern.Match(key) {
+			return true
+		}
+	}
+	return false
+}
+
+func newRegexpMatcher(patterns ...string) (regexpMatcher, error) {
+	matcher := make([]*regexp.Regexp, 0, len(patterns))
+	for _, pattern := range patterns {
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			return nil, err
+		}
+		matcher = append(matcher, re)
+	}
+	return matcher, nil
+}
+
 func initCmd(c *cli.Context) error {
 	db, err := leveldb.OpenFile(c.String("dbpath"), &opt.Options{
 		Comparer:     getComparer(c),
@@ -229,47 +277,72 @@ func deleteCmd(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
+	inverted := c.Bool("invert-match")
+	dryRun := c.Bool("dry-run")
+	keywriter := newPrettyPrinter(color.Output).SetQuoting(true)
 
-	batch := new(leveldb.Batch)
-	for i := 0; i < c.NArg(); i++ {
-		key, err := getArg(c, i)
+	var m matcher
+	if c.NArg() == 0 {
+		m = constMatcher(true)
+	} else if c.Bool("regexp") {
+		m, err = newRegexpMatcher(c.Args().Slice()...)
 		if err != nil {
 			return err
 		}
-		batch.Delete(key)
+	} else {
+		keys := make([][]byte, c.NArg())
+		for i := range c.NArg() {
+			key, err := getArg(c, i)
+			if err != nil {
+				return err
+			}
+			keys = append(keys, key)
+		}
+		m = newLiteralMatcher(keys...)
 	}
 
 	db, err := leveldb.OpenFile(c.String("dbpath"), &opt.Options{
 		Comparer:       getComparer(c),
 		ErrorIfMissing: true,
+		ReadOnly:       dryRun,
 	})
 	if err != nil {
 		return err
 	}
 	defer db.Close()
 
-	if c.NArg() == 0 {
-		s, err := db.GetSnapshot()
-		if err != nil {
-			return err
-		}
-		defer s.Release()
+	s, err := db.GetSnapshot()
+	if err != nil {
+		return err
+	}
+	defer s.Release()
 
-		iter := s.NewIterator(slice, nil)
-		defer iter.Release()
-		for iter.Next() {
-			batch.Delete(iter.Key())
-		}
-		if err := iter.Error(); err != nil {
-			return err
-		}
+	batch := new(leveldb.Batch)
 
-		iter.Release()
-		s.Release()
+	iter := s.NewIterator(slice, nil)
+	defer iter.Release()
+	for iter.Next() {
+		if m.Match(iter.Key()) != inverted {
+			if dryRun {
+				fmt.Print("Would delete ")
+				keywriter.Write(iter.Key())
+				fmt.Println()
+			} else {
+				batch.Delete(iter.Key())
+			}
+		}
+	}
+	if err := iter.Error(); err != nil {
+		return err
 	}
 
-	if err := db.Write(batch, nil); err != nil {
-		return err
+	iter.Release()
+	s.Release()
+
+	if !dryRun {
+		if err := db.Write(batch, nil); err != nil {
+			return err
+		}
 	}
 
 	if err := db.Close(); err != nil {

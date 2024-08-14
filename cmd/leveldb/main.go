@@ -114,6 +114,16 @@ func main() {
 						Aliases: []string{"b"},
 						Usage:   "interpret arguments as base64-encoded",
 					},
+					&cli.BoolFlag{
+						Name:    "regexp",
+						Aliases: []string{"R"},
+						Usage:   "treat arguments as regular expressions",
+					},
+					&cli.BoolFlag{
+						Name:    "invert-match",
+						Aliases: []string{"v"},
+						Usage:   "invert the sense of matching; delete non-matching keys",
+					},
 					&cli.StringFlag{
 						Name:    "start",
 						Aliases: []string{"s"},
@@ -155,6 +165,11 @@ func main() {
 					&cli.StringFlag{
 						Name:  "prefix-base64",
 						Usage: "limit the key range to a range that satisfy the given `prefix` (base64)",
+					},
+					&cli.BoolFlag{
+						Name:    "dry-run",
+						Aliases: []string{"n"},
+						Usage:   "do not actually delete; just show what would be deleted",
 					},
 				},
 				UseShortOptionHandling: true,
