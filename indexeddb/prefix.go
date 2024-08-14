@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"math"
 	"math/bits"
+	"slices"
 
 	"github.com/syndtr/goleveldb/leveldb/util"
 )
@@ -30,12 +31,12 @@ func prefixByte(prefix []byte, nexts ...prefixComponent) ([]byte, []byte) {
 
 	start := []byte{prefix[0]}
 	if len(limitTail) > 0 {
-		return append(start, startTail...), append(start, limitTail...)
+		return slices.Concat(start, startTail), slices.Concat(start, limitTail)
 	}
 	if prefix[0] < math.MaxUint8 {
-		return append(start, startTail...), []byte{prefix[0] + 1}
+		return slices.Concat(start, startTail), []byte{prefix[0] + 1}
 	}
-	return append(start, startTail...), nil
+	return slices.Concat(start, startTail), nil
 }
 
 func validVarInt(prefix []byte) bool {
@@ -92,12 +93,12 @@ func prefixVarInt(prefix []byte, nexts ...prefixComponent) ([]byte, []byte) {
 
 	start := encodeVarInt(int64(minv))
 	if len(limitTail) > 0 {
-		return append(start, startTail...), append(start, limitTail...)
+		return slices.Concat(start, startTail), slices.Concat(start, limitTail)
 	}
 	if maxv < math.MaxInt64 {
-		return append(start, startTail...), encodeVarInt(int64(maxv) + 1)
+		return slices.Concat(start, startTail), encodeVarInt(int64(maxv) + 1)
 	}
-	return append(start, startTail...), nil
+	return slices.Concat(start, startTail), nil
 }
 
 func prefixBinary(prefix []byte, nexts ...prefixComponent) ([]byte, []byte) {
@@ -118,15 +119,15 @@ func prefixBinary(prefix []byte, nexts ...prefixComponent) ([]byte, []byte) {
 
 	start := encodeVarInt(length)
 	if len(limitTail) > 0 {
-		return append(append(start, body...), startTail...), append(append(start, body...), limitTail...)
+		return slices.Concat(start, body, startTail), slices.Concat(start, body, limitTail)
 	}
 	if limitBody := succBytes(body); limitBody != nil {
-		return append(append(start, body...), startTail...), append(start, limitBody...)
+		return slices.Concat(start, body, startTail), slices.Concat(start, limitBody)
 	}
 	if length < math.MaxInt64 {
-		return append(append(start, body...), startTail...), encodeVarInt(length + 1)
+		return slices.Concat(start, body, startTail), encodeVarInt(length + 1)
 	}
-	return append(append(start, body...), startTail...), nil
+	return slices.Concat(start, body, startTail), nil
 }
 
 func prefixStringWithLength(prefix []byte, nexts ...prefixComponent) ([]byte, []byte) {
@@ -148,15 +149,15 @@ func prefixStringWithLength(prefix []byte, nexts ...prefixComponent) ([]byte, []
 
 	start := encodeVarInt(v)
 	if len(limitTail) > 0 {
-		return append(append(start, body...), startTail...), append(append(start, body...), limitTail...)
+		return slices.Concat(start, body, startTail), slices.Concat(start, body, limitTail)
 	}
 	if limitBody := succBytes(body); limitBody != nil {
-		return append(append(start, body...), startTail...), append(start, limitBody...)
+		return slices.Concat(start, body, startTail), slices.Concat(start, limitBody)
 	}
 	if v < math.MaxInt64 {
-		return append(append(start, body...), startTail...), encodeVarInt(v + 1)
+		return slices.Concat(start, body, startTail), encodeVarInt(v + 1)
 	}
-	return append(append(start, body...), startTail...), nil
+	return slices.Concat(start, body, startTail), nil
 }
 
 func prefixDouble(prefix []byte, nexts ...prefixComponent) ([]byte, []byte) {
@@ -170,9 +171,9 @@ func prefixDouble(prefix []byte, nexts ...prefixComponent) ([]byte, []byte) {
 	}
 
 	if len(limitTail) > 0 {
-		return append(prefix[:8:8], startTail...), append(prefix[:8:8], limitTail...)
+		return slices.Concat(prefix[:8], startTail), slices.Concat(prefix[:8], limitTail)
 	}
-	return append(prefix[:8:8], startTail...), nil
+	return slices.Concat(prefix[:8], startTail), nil
 }
 
 func prefixEncodedIDBKeys(prefix []byte, nexts ...prefixComponent) ([]byte, []byte) {
@@ -250,9 +251,9 @@ func prefixEncodedIDBKeys(prefix []byte, nexts ...prefixComponent) ([]byte, []by
 	}
 
 	if len(limitTail) > 0 {
-		return append(start, startTail...), append(start, limitTail...)
+		return slices.Concat(start, startTail), slices.Concat(start, limitTail)
 	}
-	return append(start, startTail...), limit
+	return slices.Concat(start, startTail), limit
 }
 
 func prefixKeyBody(prefix []byte, k *keyPrefix) ([]byte, []byte) {
@@ -433,9 +434,9 @@ func prefixKeyPrefix(prefix []byte) ([]byte, []byte) {
 
 	start := encodeKeyPrefix(keyPrefix)
 	if len(limitTail) > 0 {
-		return append(start, startTail...), append(start, limitTail...)
+		return slices.Concat(start, startTail), slices.Concat(start, limitTail)
 	}
-	return append(start, startTail...), encodeKeyPrefix(succKeyPrefix(keyPrefix))
+	return slices.Concat(start, startTail), encodeKeyPrefix(succKeyPrefix(keyPrefix))
 }
 
 // Prefix returns a key range that satisfy the given prefix for the idb_cmp1 comparer.
