@@ -1,4 +1,4 @@
-// Copyright (c) 2021-2024 cions
+// Copyright (c) 2021-2025 cions
 // Licensed under the MIT License. See LICENSE for details.
 
 package indexeddb
@@ -49,16 +49,16 @@ func validVarInt(prefix []byte) bool {
 }
 
 func encodeVarInt(v int64) []byte {
-	u := uint64(v)
+	x := uint64(v)
 	buf := make([]byte, 9)
-	for i := 0; i < 9; i++ {
-		if u&^0x7f == 0 {
-			buf[i] = byte(u)
+	for i := range len(buf) {
+		if x&^0x7f == 0 {
+			buf[i] = byte(x)
 			n := i + 1
 			return buf[:n:n]
 		}
-		buf[i] = byte(u) | 0x80
-		u >>= 7
+		buf[i] = byte(x) | 0x80
+		x >>= 7
 	}
 	panic("encodeVarInt: out of range")
 }
@@ -108,8 +108,8 @@ func prefixBinary(prefix []byte, nexts ...prefixComponent) ([]byte, []byte) {
 
 	prefix, length := decodeVarInt(prefix)
 	body := prefix
-	if uint64(len(body)) > uint64(length) {
-		body = body[:length]
+	if uint64(len(prefix)) > uint64(length) {
+		body = prefix[:length]
 	}
 
 	var startTail, limitTail []byte
@@ -138,8 +138,8 @@ func prefixStringWithLength(prefix []byte, nexts ...prefixComponent) ([]byte, []
 	prefix, v := decodeVarInt(prefix)
 	length := 2 * uint64(v)
 	body := prefix
-	if uint64(len(body)) > length {
-		body = body[:length]
+	if uint64(len(prefix)) > length {
+		body = prefix[:length]
 	}
 
 	var startTail, limitTail []byte
@@ -164,6 +164,7 @@ func prefixDouble(prefix []byte, nexts ...prefixComponent) ([]byte, []byte) {
 	if len(prefix) < 8 {
 		return nil, nil
 	}
+	body := prefix[:8]
 
 	var startTail, limitTail []byte
 	if len(prefix) > 8 && len(nexts) > 0 {
@@ -171,14 +172,13 @@ func prefixDouble(prefix []byte, nexts ...prefixComponent) ([]byte, []byte) {
 	}
 
 	if len(limitTail) > 0 {
-		return slices.Concat(prefix[:8], startTail), slices.Concat(prefix[:8], limitTail)
+		return slices.Concat(body, startTail), slices.Concat(body, limitTail)
 	}
-	return slices.Concat(prefix[:8], startTail), nil
+	return slices.Concat(body, startTail), nil
 }
 
 func prefixEncodedIDBKeys(prefix []byte, nexts ...prefixComponent) ([]byte, []byte) {
-	var start, limit []byte
-	var startTail, limitTail []byte
+	var start, limit, startTail, limitTail []byte
 
 	typeByte := prefix[0]
 	prefix = prefix[1:]
@@ -205,7 +205,7 @@ func prefixEncodedIDBKeys(prefix []byte, nexts ...prefixComponent) ([]byte, []by
 		_, length := decodeVarInt(prefix)
 
 		elements := make([]prefixComponent, length)
-		for i := int64(0); i < length; i++ {
+		for i := range length {
 			elements[i] = prefixEncodedIDBKeys
 		}
 		nexts = append(elements, nexts...)
@@ -330,19 +330,19 @@ func succKeyPrefix(k *keyPrefix) *keyPrefix {
 	}
 
 	if succ.IndexId < math.MaxUint32 {
-		succ.IndexId += 1
+		succ.IndexId++
 		return succ
 	}
 	succ.IndexId = 0
 
 	if succ.ObjectStoreId < math.MaxInt64 {
-		succ.ObjectStoreId += 1
+		succ.ObjectStoreId++
 		return succ
 	}
 	succ.ObjectStoreId = 0
 
 	if succ.DatabaseId < math.MaxInt64 {
-		succ.DatabaseId += 1
+		succ.DatabaseId++
 		return succ
 	}
 	return nil
@@ -413,7 +413,6 @@ func prefixPartialKeyPrefix(prefix []byte) ([]byte, []byte) {
 	}
 
 	return encodeKeyPrefix(mink), encodeKeyPrefix(succKeyPrefix(maxk))
-
 }
 
 func prefixKeyPrefix(prefix []byte) ([]byte, []byte) {

@@ -1,4 +1,4 @@
-// Copyright (c) 2021-2024 cions
+// Copyright (c) 2021-2025 cions
 // Licensed under the MIT License. See LICENSE for details.
 
 package indexeddb
@@ -180,7 +180,7 @@ func compareEncodedIDBKeys(a, b []byte) ([]byte, []byte, int) {
 		}
 		a, len1 := decodeVarInt(a)
 		b, len2 := decodeVarInt(b)
-		for i := int64(0); i < len1 && i < len2; i++ {
+		for range min(len1, len2) {
 			if len(a) == 0 || len(b) == 0 {
 				break
 			}

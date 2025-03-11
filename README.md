@@ -10,11 +10,11 @@ A command-line interface for [LevelDB](https://github.com/google/leveldb). Suppo
 
 ## Usage
 
-```sh
+```
 $ leveldb init
-$ leveldb get <key>
-$ leveldb put <key> [<value>]
-$ leveldb delete <key>
+$ leveldb get KEY
+$ leveldb put KEY [VALUE]
+$ leveldb delete KEY
 $ leveldb keys
 $ leveldb show
 $ leveldb dump
