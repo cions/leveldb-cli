@@ -610,7 +610,7 @@ func (cmd *DumpCommand) Option(name, value string, hasValue bool) error {
 func (cmd *DumpCommand) Help() *HelpParams {
 	return cmd.RangedCommand.Help().Update(&HelpParams{
 		Usage:       "dump [OPTIONS] [OUTPUT]",
-		Description: "Dump the database",
+		Description: "Dump the database to file",
 		Options: []HelpEntry{
 			{"-n, --no-clobber", "Do not overwrite an existing file"},
 			{"-f, --format=FORMAT", "File format ([msgpack-stream], msgpack)"},
