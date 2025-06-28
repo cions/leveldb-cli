@@ -4,24 +4,23 @@
 package main
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 
 	"github.com/cions/go-options"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/opt"
-	"github.com/vmihailenco/msgpack/v5"
 )
 
 func OpenDB(
 	cmd Command,
 	opts *opt.Options,
-	visit func(key, value []byte),
+	visit func(key, value []byte) error,
 	after func(db *leveldb.DB) error,
 ) error {
 	opts.Comparer = cmd.GetComparer()
@@ -36,16 +35,23 @@ func OpenDB(
 		if err != nil {
 			return err
 		}
+		defer s.Release()
+
 		iter := s.NewIterator(cmd.GetKeyRange(), nil)
+		defer iter.Release()
+
 		for iter.Next() {
-			visit(iter.Key(), iter.Value())
+			if err := visit(iter.Key(), iter.Value()); err != nil {
+				return err
+			}
 		}
-		err = iter.Error()
-		iter.Release()
-		s.Release()
-		if err != nil {
+
+		if err := iter.Error(); err != nil {
 			return err
 		}
+
+		iter.Release()
+		s.Release()
 	}
 
 	if after != nil {
@@ -62,56 +68,74 @@ func OpenDB(
 }
 
 func DumpDB(cmd Command, w io.Writer) error {
-	var entries []Entry
+	var format DumpFormat = MessagePackStream
+	if df, ok := cmd.(interface{ GetDumpFormat() DumpFormat }); ok {
+		format = df.GetDumpFormat()
+	}
+
+	var encoder DumpFileEncoder
+	switch format {
+	case MessagePackStream:
+		encoder = NewMessagePackStreamEncoder(w)
+	case MessagePack:
+		encoder = NewMessagePackEncoder(w)
+	default:
+		panic("leveldb: DumpDB: invalid DumpFormat")
+	}
+
 	return OpenDB(cmd, &opt.Options{
 		ErrorIfMissing: true,
 		ReadOnly:       true,
-	}, func(key, value []byte) {
-		entries = append(entries, Entry{
-			Key:   bytes.Clone(key),
-			Value: bytes.Clone(value),
-		})
+	}, func(key, value []byte) error {
+		return encoder.Encode(key, value)
 	}, func(db *leveldb.DB) error {
-		encoder := msgpack.NewEncoder(w)
-		encoder.UseCompactInts(true)
-		if err := encoder.EncodeMapLen(len(entries)); err != nil {
-			return err
-		}
-		for _, entry := range entries {
-			if err := encoder.EncodeBytes(entry.Key); err != nil {
-				return err
-			}
-			if err := encoder.EncodeBytes(entry.Value); err != nil {
-				return err
-			}
-		}
-		return nil
+		return encoder.Close()
 	})
 }
 
 func LoadDB(cmd Command, r io.Reader) error {
-	decoder := msgpack.NewDecoder(r)
+	var format DumpFormat = MessagePackStream
+	if df, ok := cmd.(interface{ GetDumpFormat() DumpFormat }); ok {
+		format = df.GetDumpFormat()
+	}
 
-	nentries, err := decoder.DecodeMapLen()
+	var batchLimit int = 0
+	if bl, ok := cmd.(interface{ GetBatchLimit() int }); ok {
+		batchLimit = bl.GetBatchLimit()
+	}
+
+	var decoder DumpFileDecoder
+	var err error
+	switch format {
+	case MessagePackStream:
+		decoder, err = NewMessagePackStreamDecoder(r)
+	case MessagePack:
+		decoder, err = NewMessagePackDecoder(r)
+	default:
+		panic("leveldb: LoadDB: invalid DumpFormat")
+	}
 	if err != nil {
 		return err
 	}
 
-	batch := new(leveldb.Batch)
-	for range nentries {
-		key, err := decoder.DecodeBytes()
-		if err != nil {
-			return err
+	return OpenDB(cmd, &opt.Options{
+		NoWriteMerge: true,
+		BlockSize:    1 * opt.MiB,
+		WriteBuffer:  512 * opt.MiB,
+	}, nil, func(db *leveldb.DB) error {
+		for {
+			batch := new(leveldb.Batch)
+			if err := decoder.Decode(batch, batchLimit); err != nil {
+				return err
+			}
+			if batch.Len() == 0 {
+				break
+			}
+			if err := db.Write(batch, nil); err != nil {
+				return err
+			}
 		}
-		value, err := decoder.DecodeBytes()
-		if err != nil {
-			return err
-		}
-		batch.Put(key, value)
-	}
-
-	return OpenDB(cmd, &opt.Options{}, nil, func(db *leveldb.DB) error {
-		return db.Write(batch, nil)
+		return nil
 	})
 }
 
@@ -396,15 +420,16 @@ func (cmd *DeleteCommand) Run(args []string) error {
 	return OpenDB(cmd, &opt.Options{
 		ErrorIfMissing: true,
 		ReadOnly:       cmd.DryRun,
-	}, func(key, value []byte) {
+	}, func(key, value []byte) error {
 		if matcher.Match(key) == cmd.Invert {
-			return
+			return nil
 		}
 		if cmd.DryRun {
 			fmt.Printf("Would delete %v\n", format(key))
 		} else {
 			batch.Delete(key)
 		}
+		return nil
 	}, func(db *leveldb.DB) error {
 		if cmd.DryRun {
 			return nil
@@ -467,8 +492,9 @@ func (cmd *KeysCommand) Run(args []string) error {
 	return OpenDB(cmd, &opt.Options{
 		ErrorIfMissing: true,
 		ReadOnly:       true,
-	}, func(key, value []byte) {
-		fmt.Println(format(key))
+	}, func(key, value []byte) error {
+		_, err := fmt.Println(format(key))
+		return err
 	}, nil)
 }
 
@@ -539,20 +565,24 @@ func (cmd *ShowCommand) Run(args []string) error {
 	return OpenDB(cmd, &opt.Options{
 		ErrorIfMissing: true,
 		ReadOnly:       true,
-	}, func(key, value []byte) {
-		fmt.Printf("%v: %v\n", keyf(key), valf(value))
+	}, func(key, value []byte) error {
+		_, err := fmt.Printf("%v: %v\n", keyf(key), valf(value))
+		return err
 	}, nil)
 }
 
 type DumpCommand struct {
 	RangedCommand
 	NoClobber bool
+	Format    DumpFormat
 }
 
 func (cmd *DumpCommand) Kind(name string) options.Kind {
 	switch name {
 	case "-n", "--no-clobber":
 		return options.Boolean
+	case "-f", "--format":
+		return options.Required
 	default:
 		return cmd.RangedCommand.Kind(name)
 	}
@@ -562,6 +592,15 @@ func (cmd *DumpCommand) Option(name, value string, hasValue bool) error {
 	switch name {
 	case "-n", "--no-clobber":
 		cmd.NoClobber = true
+	case "-f", "--format":
+		switch value {
+		case "msgpack-stream":
+			cmd.Format = MessagePackStream
+		case "msgpack":
+			cmd.Format = MessagePack
+		default:
+			return fmt.Errorf("invalid format %q", value)
+		}
 	default:
 		return cmd.RangedCommand.Option(name, value, hasValue)
 	}
@@ -571,11 +610,16 @@ func (cmd *DumpCommand) Option(name, value string, hasValue bool) error {
 func (cmd *DumpCommand) Help() *HelpParams {
 	return cmd.RangedCommand.Help().Update(&HelpParams{
 		Usage:       "dump [OPTIONS] [OUTPUT]",
-		Description: "Dump the database as MessagePack",
+		Description: "Dump the database",
 		Options: []HelpEntry{
 			{"-n, --no-clobber", "Do not overwrite an existing file"},
+			{"-f, --format=FORMAT", "File format ([msgpack-stream], msgpack)"},
 		},
 	})
+}
+
+func (cmd *DumpCommand) GetDumpFormat() DumpFormat {
+	return cmd.Format
 }
 
 func (cmd *DumpCommand) Run(args []string) (err error) {
@@ -598,13 +642,63 @@ func (cmd *DumpCommand) Run(args []string) (err error) {
 	return DumpDB(cmd, w)
 }
 
-type LoadCommand struct{ RootCommand }
+type LoadCommand struct {
+	RootCommand
+	Format     DumpFormat
+	BatchLimit int
+}
+
+func (cmd *LoadCommand) Kind(name string) options.Kind {
+	switch name {
+	case "-f", "--format":
+		return options.Required
+	case "--batch-limit":
+		return options.Required
+	default:
+		return cmd.RootCommand.Kind(name)
+	}
+}
+
+func (cmd *LoadCommand) Option(name, value string, hasValue bool) error {
+	switch name {
+	case "-f", "--format":
+		switch value {
+		case "msgpack-stream":
+			cmd.Format = MessagePackStream
+		case "msgpack":
+			cmd.Format = MessagePack
+		default:
+			return fmt.Errorf("invalid format %q", value)
+		}
+	case "--batch-limit":
+		n, err := strconv.ParseUint(value, 10, strconv.IntSize-1)
+		if err != nil {
+			return err
+		}
+		cmd.BatchLimit = int(n)
+	default:
+		return cmd.RootCommand.Option(name, value, hasValue)
+	}
+	return nil
+}
 
 func (cmd *LoadCommand) Help() *HelpParams {
 	return cmd.RootCommand.Help().Update(&HelpParams{
-		Usage:       "load [INPUT]",
-		Description: "Load MessagePack into the database",
+		Usage:       "load [OPTIONS] [INPUT]",
+		Description: "Load file into the database",
+		Options: []HelpEntry{
+			{"-f, --format=FORMAT", "File format ([msgpack-stream], msgpack)"},
+			{"--batch-limit=N", "Limit the maximum size of write batch"},
+		},
 	})
+}
+
+func (cmd *LoadCommand) GetDumpFormat() DumpFormat {
+	return cmd.Format
+}
+
+func (cmd *LoadCommand) GetBatchLimit() int {
+	return cmd.BatchLimit
 }
 
 func (cmd *LoadCommand) Run(args []string) (err error) {
@@ -645,13 +739,46 @@ func (cmd *RepairCommand) Run(args []string) error {
 	return nil
 }
 
-type CompactCommand struct{ RootCommand }
+type CompactCommand struct {
+	RootCommand
+	BatchLimit int
+}
+
+func (cmd *CompactCommand) Kind(name string) options.Kind {
+	switch name {
+	case "--batch-limit":
+		return options.Required
+	default:
+		return cmd.RootCommand.Kind(name)
+	}
+}
+
+func (cmd *CompactCommand) Option(name, value string, hasValue bool) error {
+	switch name {
+	case "--batch-limit":
+		n, err := strconv.ParseUint(value, 10, strconv.IntSize-1)
+		if err != nil {
+			return err
+		}
+		cmd.BatchLimit = int(n)
+	default:
+		return cmd.RootCommand.Option(name, value, hasValue)
+	}
+	return nil
+}
 
 func (cmd *CompactCommand) Help() *HelpParams {
 	return cmd.RootCommand.Help().Update(&HelpParams{
-		Usage:       "compact",
+		Usage:       "compact [OPTIONS]",
 		Description: "Compact the database",
+		Options: []HelpEntry{
+			{"--batch-limit=N", "Limit the maximum size of write batch"},
+		},
 	})
+}
+
+func (cmd *CompactCommand) GetBatchLimit() int {
+	return cmd.BatchLimit
 }
 
 func (cmd *CompactCommand) Run(args []string) error {
