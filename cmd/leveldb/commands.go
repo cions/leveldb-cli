@@ -257,8 +257,9 @@ func (cmd *GetCommand) Run(args []string) error {
 
 type PutCommand struct {
 	RootCommand
-	Raw    bool
-	Base64 bool
+	Raw         bool
+	Base64      bool
+	Base64Stdin bool
 }
 
 func (cmd *PutCommand) Kind(name string) options.Kind {
@@ -266,6 +267,8 @@ func (cmd *PutCommand) Kind(name string) options.Kind {
 	case "-r", "--raw":
 		return options.Boolean
 	case "-b", "--base64":
+		return options.Boolean
+	case "-B", "--base64-stdin":
 		return options.Boolean
 	default:
 		return cmd.RootCommand.Kind(name)
@@ -278,6 +281,8 @@ func (cmd *PutCommand) Option(name, value string, hasValue bool) error {
 		cmd.Raw = true
 	case "-b", "--base64":
 		cmd.Base64 = true
+	case "-B", "--base64-stdin":
+		cmd.Base64Stdin = true
 	default:
 		return cmd.RootCommand.Option(name, value, hasValue)
 	}
@@ -292,6 +297,7 @@ func (cmd *PutCommand) Help() *HelpParams {
 		Options: []HelpEntry{
 			{"-r, --raw", "Do not interpret escape sequences in arguments"},
 			{"-b, --base64", "Interpret arguments as base64-encoded"},
+			{"-B, --base64-stdin", "Interpret the standard input as base64 encoded"},
 		},
 	})
 }
@@ -322,6 +328,12 @@ func (cmd *PutCommand) Run(args []string) error {
 		value, err = io.ReadAll(os.Stdin)
 		if err != nil {
 			return err
+		}
+		if cmd.Base64Stdin {
+			value, err = base64.StdEncoding.AppendDecode(nil, value)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
