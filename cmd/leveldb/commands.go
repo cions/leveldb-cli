@@ -4,6 +4,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -182,8 +183,9 @@ func (cmd *InitCommand) Run(args []string) error {
 
 type GetCommand struct {
 	RootCommand
-	Raw    bool
-	Base64 bool
+	Raw          bool
+	Base64       bool
+	Base64Output bool
 }
 
 func (cmd *GetCommand) Kind(name string) options.Kind {
@@ -191,6 +193,8 @@ func (cmd *GetCommand) Kind(name string) options.Kind {
 	case "-r", "--raw":
 		return options.Boolean
 	case "-b", "--base64":
+		return options.Boolean
+	case "-B", "--base64-output":
 		return options.Boolean
 	default:
 		return cmd.RootCommand.Kind(name)
@@ -203,6 +207,8 @@ func (cmd *GetCommand) Option(name, value string, hasValue bool) error {
 		cmd.Raw = true
 	case "-b", "--base64":
 		cmd.Base64 = true
+	case "-B", "--base64-output":
+		cmd.Base64Output = true
 	default:
 		return cmd.RootCommand.Option(name, value, hasValue)
 	}
@@ -216,6 +222,7 @@ func (cmd *GetCommand) Help() *HelpParams {
 		Options: []HelpEntry{
 			{"-r, --raw", "Do not interpret escape sequences in arguments"},
 			{"-b, --base64", "Interpret arguments as base64-encoded"},
+			{"-B, --base64-output", "Write the value in base64 encoding"},
 		},
 	})
 }
@@ -237,6 +244,9 @@ func (cmd *GetCommand) Run(args []string) error {
 		value, err := db.Get(key, nil)
 		if err != nil {
 			return err
+		}
+		if cmd.Base64Output {
+			value = base64.StdEncoding.AppendEncode(nil, value)
 		}
 		if _, err := os.Stdout.Write(value); err != nil {
 			return err
