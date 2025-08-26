@@ -1,8 +1,6 @@
 module github.com/cions/leveldb-cli
 
-go 1.23.0
-
-toolchain go1.24.0
+go 1.24.0
 
 require (
 	github.com/cions/go-colorterm v0.3.0
@@ -14,6 +12,6 @@ require (
 require (
 	github.com/golang/snappy v1.0.0 // indirect
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
-	golang.org/x/sys v0.33.0 // indirect
-	golang.org/x/term v0.32.0 // indirect
+	golang.org/x/sys v0.35.0 // indirect
+	golang.org/x/term v0.34.0 // indirect
 )
