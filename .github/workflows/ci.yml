@@ -69,6 +69,7 @@ jobs:
     strategy:
       matrix:
         include:
+        - { GOOS: windows, GOARCH: "386" }
         - { GOOS: windows, GOARCH: amd64 }
         - { GOOS: darwin,  GOARCH: amd64 }
         - { GOOS: darwin,  GOARCH: arm64 }
