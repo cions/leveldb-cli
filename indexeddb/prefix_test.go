@@ -1,4 +1,4 @@
-// Copyright (c) 2021-2025 cions
+// Copyright (c) 2021-2026 cions
 // Licensed under the MIT License. See LICENSE for details.
 
 package indexeddb_test
