@@ -1,5 +1,5 @@
-// Copyright (c) 2021-2026 cions
-// Licensed under the MIT License. See LICENSE for details.
+// Copyright (c) 2021-2026 cions <cions@tuta.com>
+// SPDX-License-Identifier: MIT
 
 package main
 
@@ -129,7 +129,8 @@ func NewMessagePackStreamDecoder(r io.Reader) (*MessagePackStreamDecoder, error)
 }
 
 func (d *MessagePackStreamDecoder) Decode(batch *leveldb.Batch, batchLimit int) error {
-	for {
+	// batchLimit == 0 means unlimited
+	for uint(batch.Len()) > uint(batchLimit)-1 {
 		key, err := d.decoder.DecodeBytes()
 		if err == io.EOF {
 			break
@@ -141,9 +142,6 @@ func (d *MessagePackStreamDecoder) Decode(batch *leveldb.Batch, batchLimit int) 
 			return err
 		}
 		batch.Put(key, value)
-		if uint(batch.Len()) > uint(batchLimit)-1 {
-			break
-		}
 	}
 	return nil
 }

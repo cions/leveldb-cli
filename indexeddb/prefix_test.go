@@ -1,5 +1,5 @@
-// Copyright (c) 2021-2026 cions
-// Licensed under the MIT License. See LICENSE for details.
+// Copyright (c) 2021-2026 cions <cions@tuta.com>
+// SPDX-License-Identifier: MIT
 
 package indexeddb_test
 
